@@ -12,11 +12,13 @@
 > 一個簡單好用的 SD 卡檔案備份工具，備份至本機磁碟。 
 
 ---
-開發理念 | Project Purpose
+This project was born from a personal motivation: to help my parent, who finds modern technology challenging, enjoy their digital memories without stress. While tasks like copying photos from an SD card might feel simple for tech-savvy users, they can be a real hurdle for others. That's why I set out to design a tool that prioritizes simplicity, clarity, and ease of use.
 
-This tool was created out of a personal need: helping my parent — a member of the older generation — enjoy their digital memories without struggling with technology. Tasks like copying photos from an SD card may seem trivial to tech-savvy users, but they can be overwhelming to others. This tool was designed with simplicity and clarity in mind, eliminating unnecessary options that could confuse rather than assist. My goal is to make file backup a pain-free, one-click process — so that everyone, regardless of technical background, can easily preserve their moments. ✨📸🔒
+The SD Card Backup Tool eliminates confusing options that often complicate the process rather than improve it. My goal is to provide a one-click solution that makes file backup effortless and accessible for everyone, regardless of age or technical background. To further improve usability, I’ve incorporated visual cues and thoughtful interface elements that enhance readability and guide users intuitively through each step. ✨📸🔒
 
-這個工具的開發初衷，來自於幫助我的父母 —— 一群對科技不那麼熟悉的長輩。對我們來說輕而易舉的操作，如從 SD 卡複製照片，對他們而言卻可能是困難重重。我希望透過這個工具，以「極簡易用」為核心設計理念，移除可能造成混淆的選項，讓備份過程盡可能簡單、直覺，幾乎只需一鍵即可完成備份，讓每個人都能輕鬆保存回憶。✨📸🔒
+這個專案源於我個人的初衷：希望幫助我的父母這類對科技較為陌生的長輩，也能輕鬆享受數位回憶。對習慣科技的使用者而言，從 SD 卡複製照片是再簡單不過的事，但對不熟悉電腦操作的人來說，卻可能充滿困難與挫折。
+
+因此我打造了一款以「簡單」、「清楚」和「容易上手」為核心設計理念的工具，移除一切可能造成混淆的選項，讓備份流程直覺明確、幾乎一鍵即可完成。為了進一步提升可用性，我也在介面中加入了視覺提示與引導元素，幫助使用者輕鬆完成每一個步驟，無需技術背景，也能自信地保存回憶。✨📸🔒
 
 ---
 
