@@ -9,16 +9,16 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 > A user-friendly tool for backing up files from SD cards to your computer. 
-> 一個簡單好用的 SD 卡檔案備份工具，備份至本機磁碟。 
+> 一個簡單好用的 SD 卡檔案備份工具
 
 ---
 This project was born from a personal motivation: to help my parent, who finds modern technology challenging, enjoy their digital memories without stress. While tasks like copying photos from an SD card might feel simple for tech-savvy users, they can be a real hurdle for others. That's why I set out to design a tool that prioritizes simplicity, clarity, and ease of use.
 
 The SD Card Backup Tool eliminates confusing options that often complicate the process rather than improve it. My goal is to provide a one-click solution that makes file backup effortless and accessible for everyone, regardless of age or technical background. To further improve usability, I’ve incorporated visual cues and thoughtful interface elements that enhance readability and guide users intuitively through each step. ✨📸🔒
 
-這個專案源於我個人的初衷：希望幫助我的父母這類對科技較為陌生的長輩，也能輕鬆享受數位回憶。對習慣科技的使用者而言，從 SD 卡複製照片是再簡單不過的事，但對不熟悉電腦操作的人來說，卻可能充滿困難與挫折。
+這個專案係我因應個人需要而開發，希望幫到我爸媽呢類對科技唔太熟嘅上一代，可以輕鬆享受佢哋嘅數碼回憶。對於識用電腦嘅人嚟講，從 SD 卡複製相片可能係好基本，但對長輩或者唔太熟 IT 嘅人，卻可能好唔方便。
 
-因此我打造了一款以「簡單」、「清楚」和「容易上手」為核心設計理念的工具，移除一切可能造成混淆的選項，讓備份流程直覺明確、幾乎一鍵即可完成。為了進一步提升可用性，我也在介面中加入了視覺提示與引導元素，幫助使用者輕鬆完成每一個步驟，無需技術背景，也能自信地保存回憶。✨📸🔒
+所以我設計咗一個以「簡單」、「清晰」同「易用」為重心嘅工具，專登移除啲多餘又可能令人混亂嘅選項，令備份過程變得直觀易明，幾乎一撳就搞掂。為咗令操作更親民，我仲喺介面度加入咗視覺提示同引導元素，幫助用家一步步完成整個流程，就算冇技術背景都可以安心備份珍貴回憶。✨📸🔒
 
 ---
 
