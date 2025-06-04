@@ -11,6 +11,7 @@ __pycache__/
 
 # Logs
 *.log
+error_log.txt
 
 # IDE specific files
 .vscode/
