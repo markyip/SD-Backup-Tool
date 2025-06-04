@@ -5,7 +5,7 @@
 </p>
 
 ![Version](https://img.shields.io/badge/version-0.1-blue)
-![Download](https://img.shields.io/github/downloads/markyip/SD-Backup-Tool/total)
+[![Download](https://img.shields.io/github/downloads/markyip/SD-Backup-Tool/total)](https://github.com/markyip/SD-Backup-Tool/releases/latest/download/SD_Backup_Tool.exe)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 > A user-friendly tool for backing up files from SD cards to your computer. 
