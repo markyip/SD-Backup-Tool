@@ -45,7 +45,11 @@
 
 ### 系統需求
 
-- Windows 10 或更新版本
+#### 使用執行檔
+- Windows 7 或更新版本
+
+#### 從原始碼建置/執行
+- Windows 7 或更新版本
 - Python 3.8 或更新版本
 - 必要的Python套件（由建置腳本自動安裝）：
   - PyQt5
@@ -62,12 +66,61 @@
 
 #### 選項2：從原始碼建置
 
-1. 複製儲存庫
-2. 執行建置腳本：
+1. **複製儲存庫：**
    ```bash
-   python build.py
+   git clone <repository-url>
+   cd sd_backup_tool
    ```
-3. 執行檔將在 `dist` 資料夾中建立
+
+2. **建立虛擬環境：**
+   ```bash
+   python -m venv venv
+   ```
+
+3. **啟用虛擬環境：**
+   ```bash
+   # Windows
+   venv\Scripts\activate
+   
+   # Linux/Mac
+   source venv/bin/activate
+   ```
+
+4. **安裝依賴項目：**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. **使用批次檔建置執行檔：**
+   ```bash
+   # Windows（推薦 - 自動處理所有步驟）
+   build_sd_backup_tool.bat
+   
+   # 或手動使用Python
+   python build_config/build.py
+   ```
+
+6. **執行檔將在 `dist` 資料夾中建立**
+
+#### 選項3：開發模式執行
+
+用於開發或測試而不建置執行檔：
+
+1. **依照上述步驟1-4設定環境**
+
+2. **直接使用Python執行：**
+   ```bash
+   python main.py
+   ```
+
+3. **或使用開發批次檔：**
+   ```bash
+   
+   run_sd_backup_tool.bat
+   
+   
+   
+   ```
 
 ### 使用方式
 
@@ -164,7 +217,11 @@ A user-friendly tool for backing up files from SD cards to local drives, with a 
 
 ### Requirements
 
-- Windows 10 or later
+#### Using the Executable
+- Windows 7 or later
+
+#### Building/Running from Source
+- Windows 7 or later
 - Python 3.8 or later
 - Required Python packages (automatically installed by build script):
   - PyQt5
@@ -189,19 +246,57 @@ To build the executable from source, follow these steps:
    cd sd_backup_tool
    ```
 
-2. **Install dependencies:**
+2. **Create a virtual environment:**
+   ```bash
+   python -m venv venv
+   ```
+
+3. **Activate the virtual environment:**
+   ```bash
+   # Windows
+   venv\Scripts\activate
+   
+   # Linux/Mac
+   source venv/bin/activate
+   ```
+
+4. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Build the executable:**
+5. **Build the executable using the batch file:**
    ```bash
+   # Windows (recommended - handles all steps automatically)
+   build_sd_backup_tool.bat
+   
+   # Or manually using Python
    python build_config/build.py
    ```
 
-4. **Run the executable:**
+6. **Run the executable:**
    - The executable will be located in the `dist` directory.
-   - Run `dist/Photo Video Backup Tool.exe` to start the application.
+   - Run `dist/SD_Backup_Tool.exe` to start the application.
+
+#### Option 3: Running in Development Mode
+
+For development or testing without building:
+
+1. **Follow steps 1-4 above to set up the environment**
+
+2. **Run directly with Python:**
+   ```bash
+   python main.py
+   ```
+
+3. **Or use the development batch files:**
+   ```bash
+   
+   run_sd_backup_tool.bat
+   
+   
+   
+   ```
 
 ### Usage
 

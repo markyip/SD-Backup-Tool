@@ -3,12 +3,18 @@
 ```
 sd_backup_tool/
 ├── .gitignore
+├── LICENSE
 ├── README.md
 ├── PROJECT_STRUCTURE.md
 ├── requirements.txt
 ├── main.py
+├── build_sd_backup_tool.bat
+├── run_sd_backup_tool.bat
 ├── build_config/
-│   └── build.py
+│   ├── build.py
+│   ├── create_installer.py
+│   ├── installer.iss
+│   └── 相片影片備份工具.spec
 ├── core/
 │   ├── __init__.py
 │   ├── backup_worker.py
@@ -19,13 +25,12 @@ sd_backup_tool/
 │   ├── main_window_enhanced.py
 │   └── drive_tile_widget.py
 ├── assets/
-│   ├── icon.ico
-│   └── other_assets/
+│   └── icon.ico
 ├── locales/
 │   ├── __init__.py
-│   └── language_manager.py
+│   └── translations.py
 └── dist/
-    └── Photo Video Backup Tool.exe
+    └── SD_Backup_Tool.exe
 ```
 
 ## Overview
@@ -38,6 +43,12 @@ This document describes the structure and organization of the SD Backup Tool pro
 sd_backup_tool/
 ├── assets/              # Application assets
 │   └── icon.ico        # Application icon
+│
+├── build_config/       # Build system files
+│   ├── build.py        # Main build script for creating executable
+│   ├── create_installer.py # Installer creation script
+│   ├── installer.iss   # Inno Setup installer configuration
+│   └── 相片影片備份工具.spec # PyInstaller spec file
 │
 ├── core/               # Core functionality modules
 │   ├── sd_detector_fixed.py    # SD card detection
@@ -52,9 +63,12 @@ sd_backup_tool/
 │   ├── main_window_enhanced.py # Main application window
 │   └── drive_tile_widget.py    # Drive selection interface
 │
-├── build.py           # Build script for creating executable
+├── build_sd_backup_tool.bat   # Build script for creating executable
+├── run_sd_backup_tool.bat     # Development script for running application
 ├── main.py            # Application entry point
-└── requirements.txt   # Python package dependencies
+├── requirements.txt   # Python package dependencies
+├── LICENSE            # MIT license file
+└── README.md          # Project documentation
 ```
 
 ## Key Components
@@ -77,11 +91,19 @@ sd_backup_tool/
 
 ### Build System
 
-- **build.py**: Handles the creation of the executable
+- **build_config/build.py**: Main build script that handles the creation of the executable
   - Installs required dependencies
-  - Creates single-file executable
-  - Bundles assets
+  - Creates single-file executable using PyInstaller
+  - Bundles assets and dependencies
   - Cleans up build artifacts
+- **build_sd_backup_tool.bat**: User-friendly batch file for building
+  - Validates Python installation
+  - Checks for required files
+  - Executes build script with error handling
+  - Offers to run the application after building
+- **run_sd_backup_tool.bat**: Development batch file for running the application
+  - Runs application directly with Python
+  - Includes error handling and validation
 
 ## Workflow
 
@@ -111,20 +133,63 @@ sd_backup_tool/
 
 ## Building the Application
 
-1. Run `build.py`:
+### Option 1: Using the Batch File (Recommended)
+
+1. Run the build batch file:
    ```bash
-   python build.py
+   build_sd_backup_tool.bat
    ```
 
-2. The script will:
-   - Install required dependencies
-   - Create executable in `dist` folder
-   - Clean up build artifacts
+2. The batch file will:
+   - Validate Python installation
+   - Check for required project files
+   - Execute the build script automatically
+   - Offer to run the application after building
+
+### Option 2: Manual Build
+
+1. Run the build script directly:
+   ```bash
+   python build_config/build.py
+   ```
+
+2. Both methods will:
+   - Install required dependencies automatically
+   - Create executable in `dist` folder as `SD_Backup_Tool.exe`
+   - Clean up build artifacts and temporary files
 
 3. The resulting executable:
    - Contains all necessary components
-   - Bundles required assets
+   - Bundles required assets and dependencies
    - Supports language customization
+   - Runs independently without Python installation
+
+## Development Workflow
+
+### Setting up Development Environment
+
+1. **Clone the repository and create virtual environment:**
+   ```bash
+   git clone <repository-url>
+   cd sd_backup_tool
+   python -m venv venv
+   venv\Scripts\activate  # Windows
+   pip install -r requirements.txt
+   ```
+
+2. **Run in development mode:**
+   ```bash
+   # Using batch file (recommended)
+   run_sd_backup_tool.bat
+   
+   # Or directly with Python
+   python main.py
+   ```
+
+3. **Build for distribution:**
+   ```bash
+   build_sd_backup_tool.bat
+   ```
 
 ## Development Guidelines
 
@@ -139,6 +204,11 @@ sd_backup_tool/
    - Maintain formatting placeholders
 
 3. **Building Changes**
-   - Run `build.py` to create new executable
+   - Use `build_sd_backup_tool.bat` to create new executable
    - Test changes in the built version
    - Verify all features work as expected
+
+4. **Virtual Environment**
+   - Always use a virtual environment for development
+   - The `venv/` folder is excluded from git (see `.gitignore`)
+   - Each developer should create their own virtual environment
