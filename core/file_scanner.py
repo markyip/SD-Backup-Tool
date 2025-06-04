@@ -73,10 +73,30 @@ class ScanWorkerThread(QThread):
         }
         
         total_size = 0
+        processed_files = 0
+        max_files = 50000  # Safety limit to prevent excessive scanning
+        
+        # Get drive capacity for validation
+        try:
+            import shutil
+            total_drive_size, _, _ = shutil.disk_usage(directory)
+            max_reasonable_size = total_drive_size * 0.95  # 95% of drive capacity
+        except:
+            max_reasonable_size = float('inf')  # No limit if can't determine drive size
         
         # Recursively scan all files
         for root, dirs, files in os.walk(directory):
+            # Skip certain system/hidden directories that might cause issues
+            dirs[:] = [d for d in dirs if not d.startswith('.') and
+                      d.lower() not in ['system volume information', '$recycle.bin',
+                                      'windows', 'program files', 'program files (x86)']]
+            
             for file in files:
+                # Safety check: don't scan too many files
+                if processed_files >= max_files:
+                    print(f"Scan limit reached ({max_files} files), stopping scan")
+                    break
+                
                 file_path = os.path.join(root, file)
                 file_ext = os.path.splitext(file)[1].lower()
                 
@@ -86,8 +106,31 @@ class ScanWorkerThread(QThread):
                     continue
                 
                 try:
+                    # Skip symbolic links and special files
+                    if os.path.islink(file_path):
+                        print(f"Skipping symbolic link: {file_path}")
+                        continue
+                    
+                    # Check if file actually exists and is accessible
+                    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                        print(f"Skipping non-existent or non-file: {file_path}")
+                        continue
+                    
                     file_size = os.path.getsize(file_path)
+                    
+                    # Sanity check: individual file size shouldn't exceed drive capacity
+                    if file_size > max_reasonable_size:
+                        print(f"Skipping impossibly large file: {file_path} ({file_size} bytes)")
+                        continue
+                    
+                    # Check if adding this file would exceed drive capacity
+                    if total_size + file_size > max_reasonable_size:
+                        print(f"Total size would exceed drive capacity, stopping scan")
+                        print(f"Current total: {total_size / (1024**3):.2f}GB, Drive capacity: {max_reasonable_size / (1024**3):.2f}GB")
+                        break
+                    
                     total_size += file_size
+                    processed_files += 1
                     
                     # Get file creation date
                     creation_date = self.get_file_creation_date(file_path, file_type)
@@ -112,11 +155,29 @@ class ScanWorkerThread(QThread):
                     elif file_type == 'raw':
                         files_info['raw_files'] += 1
                 
+                except PermissionError:
+                    print(f"Permission denied accessing file: {file_path}")
+                    continue
+                except OSError as e:
+                    print(f"OS error accessing file {file_path}: {e}")
+                    continue
                 except Exception as e:
                     print(f"Error processing file {file_path}: {e}")
                     continue
+            
+            # Break outer loop if we hit the file limit
+            if processed_files >= max_files:
+                break
         
         files_info['total_size_gb'] = total_size / (1024**3)
+        
+        # Final validation: check if total size makes sense
+        if max_reasonable_size != float('inf'):
+            drive_capacity_gb = max_reasonable_size / (1024**3)
+            if files_info['total_size_gb'] > drive_capacity_gb:
+                print(f"WARNING: Calculated file size ({files_info['total_size_gb']:.2f}GB) exceeds drive capacity ({drive_capacity_gb:.2f}GB)")
+        
+        print(f"Scan completed: {processed_files} files processed, {files_info['total_files']} media files found, {files_info['total_size_gb']:.2f}GB total")
         return files_info
     
     def get_file_type(self, extension):
