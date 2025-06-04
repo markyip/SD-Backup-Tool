@@ -12,7 +12,7 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QProgressBar, QGroupBox, QGridLayout,
-    QSizePolicy, QMessageBox, QFileDialog, QScrollArea
+    QSizePolicy, QMessageBox, QFileDialog, QScrollArea, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QSettings
 from PyQt5.QtGui import QFont, QIcon
@@ -529,35 +529,53 @@ class MainWindow(QMainWindow):
             self.backup_worker = BackupWorker(self.scanned_files, destination_path)
             self.backup_worker.progress_updated.connect(self.on_backup_progress)
             self.backup_worker.file_copying.connect(self.on_file_copying)
+            self.backup_worker.file_skipping.connect(self.on_file_skipping)
             self.backup_worker.backup_completed.connect(self.on_backup_completed)
             self.backup_worker.backup_error.connect(self.on_backup_error)
             self.backup_worker.drive_disconnected.connect(self.on_drive_disconnected)
             self.backup_worker.start()
     
-    def on_backup_progress(self, current, total):
+    def on_backup_progress(self, current, total, copied, skipped):
         """Backup progress update"""
         if total > 0:
             progress = int((current / total) * 100)
             self.progress_bar.setValue(progress)
-            self.status_label.setText(self.lang.get_text('backup_progress', current, total, progress))
+            self.status_label.setText(f"進度: {current}/{total} ({progress}%) - 已複製: {copied}, 已跳過: {skipped}")
     
     def on_file_copying(self, filename):
         """Copying file"""
-        self.current_file_label.setText(self.lang.get_text('copying', filename))
+        self.current_file_label.setText(f"正在複製: {filename}")
+        self.current_file_label.setStyleSheet("color: #2980b9; padding: 5px; font-weight: bold;")
     
-    def on_backup_completed(self, copied_count, destination_path):
+    def on_file_skipping(self, filename):
+        """Skipping duplicate file"""
+        self.current_file_label.setText(f"跳過重複檔案: {filename}")
+        self.current_file_label.setStyleSheet("color: #f39c12; padding: 5px; font-weight: bold;")
+    
+    def on_backup_completed(self, copied_count, skipped_count, destination_path):
         """Backup complete"""
         self.backup_button.setEnabled(True)
         self.backup_button.setText(self.lang.get_text('start_backup'))
         self.progress_bar.setValue(100)
         self.current_file_label.setText("")
-        self.status_label.setText(self.lang.get_text('backup_complete', copied_count))
+        
+        total_processed = copied_count + skipped_count
+        if skipped_count > 0:
+            self.status_label.setText(f"備份完成！已複製 {copied_count} 個檔案，跳過 {skipped_count} 個重複檔案")
+        else:
+            self.status_label.setText(f"備份完成！已複製 {copied_count} 個檔案")
         
         self.eject_sd_card()
         
+        # Create improved completion message
+        if skipped_count > 0:
+            completion_message = f"備份任務已完成！\n\n已成功複製 {copied_count} 個新檔案\n跳過 {skipped_count} 個已存在的重複檔案\n總計處理 {total_processed} 個檔案\n\n目標位置: {destination_path}"
+        else:
+            completion_message = f"備份任務已完成！\n\n已成功複製 {copied_count} 個檔案\n\n目標位置: {destination_path}"
+        
         self.show_custom_completion_dialog(
-            self.lang.get_text('backup_complete_title'),
-            self.lang.get_text('backup_complete_message', copied_count, destination_path),
+            "✅ 備份完成",
+            completion_message,
             destination_path
         )
     
@@ -628,14 +646,14 @@ class MainWindow(QMainWindow):
                 layout.setContentsMargins(40, 40, 40, 40)
                 
                 # Title label
-                title_label = QLabel("✅ SD Card Safely Ejected")
+                title_label = QLabel("✅ SD卡已安全退出")
                 title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
                 title_label.setAlignment(Qt.AlignCenter)
                 title_label.setStyleSheet("color: #27ae60; margin-bottom: 15px;")
                 layout.addWidget(title_label)
                 
                 # Message label
-                message_label = QLabel("You can now safely remove the SD card.")
+                message_label = QLabel("您現在可以安全地移除SD卡。")
                 message_label.setFont(QFont("Microsoft JhengHei", 14))
                 message_label.setAlignment(Qt.AlignCenter)
                 message_label.setStyleSheet("color: #34495e; margin-bottom: 25px;")
@@ -648,7 +666,7 @@ class MainWindow(QMainWindow):
                 button_layout.setContentsMargins(0, 10, 0, 0)
                 
                 # OK button
-                ok_button = QPushButton("✅ OK")
+                ok_button = QPushButton("確定")
                 ok_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
                 ok_button.setMinimumHeight(50)
                 ok_button.setStyleSheet("""
@@ -678,8 +696,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 # Use custom error dialog
                 self.show_custom_error_dialog(
-                    "⚠️ Could not automatically eject SD card",
-                    f"Please remove SD card manually:\n{str(e)}"
+                    "⚠️ 無法自動退出SD卡",
+                    f"請手動移除SD卡：\n{str(e)}"
                 )
     
     def on_drive_disconnected(self, error_type, copied_count, total_files):

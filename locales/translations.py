@@ -81,5 +81,8 @@ UI_TEXT = {
     # Status messages
     'scanning': '正在掃描...',  # Scanning...
     'backup_progress': '備份進度：{}/{} ({}%)',  # Backup Progress: {}/{} ({}%)
+    'backup_progress_detailed': '進度: {}/{} ({}%) - 已複製: {}, 已跳過: {}',  # Progress: {}/{} ({}%) - Copied: {}, Skipped: {}
     'copying': '正在複製：{}',  # Copying: {}
-} 
+    'skipping_duplicate': '跳過重複檔案：{}',  # Skipping duplicate: {}
+    'backup_complete_with_skipped': '備份完成！已複製 {} 個檔案，跳過 {} 個重複檔案',  # Backup complete! Copied {} files, skipped {} duplicates
+}

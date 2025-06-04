@@ -215,3 +215,53 @@ Traceback (most recent call last):
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'QScrollArea' object has no attribute 'on_drive_selected'
 --------------------------------------------------------------------------------
+Timestamp: 2025-06-04 05:03:35
+Traceback (most recent call last):
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 519, in start_backup
+    reply = self.show_custom_confirmation_dialog(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 724, in show_custom_confirmation_dialog
+    dialog = QDialog(self)
+             ^^^^^^^
+NameError: name 'QDialog' is not defined
+--------------------------------------------------------------------------------
+Timestamp: 2025-06-04 05:03:42
+Traceback (most recent call last):
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 519, in start_backup
+    reply = self.show_custom_confirmation_dialog(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 724, in show_custom_confirmation_dialog
+    dialog = QDialog(self)
+             ^^^^^^^
+NameError: name 'QDialog' is not defined
+--------------------------------------------------------------------------------
+Timestamp: 2025-06-04 05:03:46
+Traceback (most recent call last):
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 519, in start_backup
+    reply = self.show_custom_confirmation_dialog(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 724, in show_custom_confirmation_dialog
+    dialog = QDialog(self)
+             ^^^^^^^
+NameError: name 'QDialog' is not defined
+--------------------------------------------------------------------------------
+Timestamp: 2025-06-04 05:03:47
+Traceback (most recent call last):
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 519, in start_backup
+    reply = self.show_custom_confirmation_dialog(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 724, in show_custom_confirmation_dialog
+    dialog = QDialog(self)
+             ^^^^^^^
+NameError: name 'QDialog' is not defined
+--------------------------------------------------------------------------------
+Timestamp: 2025-06-04 05:04:05
+Traceback (most recent call last):
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 519, in start_backup
+    reply = self.show_custom_confirmation_dialog(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\sd_backup_tool\ui\main_window_enhanced.py", line 724, in show_custom_confirmation_dialog
+    dialog = QDialog(self)
+             ^^^^^^^
+NameError: name 'QDialog' is not defined
+--------------------------------------------------------------------------------

@@ -14,9 +14,10 @@ from .file_scanner import FileDeduplicator
 class BackupWorker(QThread):
     """Backup worker thread"""
     
-    progress_updated = pyqtSignal(int, int)  # current progress, total count
+    progress_updated = pyqtSignal(int, int, int, int)  # current progress, total count, copied count, skipped count
     file_copying = pyqtSignal(str)           # name of the file being copied
-    backup_completed = pyqtSignal(int, str)  # number of files copied, destination path
+    file_skipping = pyqtSignal(str)          # name of the file being skipped
+    backup_completed = pyqtSignal(int, int, str)  # number of files copied, number of files skipped, destination path
     backup_error = pyqtSignal(str)           # error message
     drive_disconnected = pyqtSignal(str, int, int)  # error type, number of files copied, total files
     
@@ -59,15 +60,34 @@ class BackupWorker(QThread):
             if duplicates:
                 self.logger.info(f"Skipping {len(duplicates)} duplicate files")
             
+            copied_count = 0
+            skipped_count = 0
+            total_files = len(self.files_list)  # Total includes both new and duplicate files
+            processed_count = 0
+            
+            # Process duplicate files first (show as skipped)
+            for file_info in duplicates:
+                if self.should_stop:
+                    self.logger.info("Backup process aborted by user")
+                    break
+                
+                processed_count += 1
+                skipped_count += 1
+                
+                # Send progress update for skipped file
+                self.progress_updated.emit(processed_count, total_files, copied_count, skipped_count)
+                self.file_skipping.emit(file_info['name'])
+                
+                self.logger.info(f"Skipped duplicate: {file_info['name']}")
+            
+            # If all files were duplicates, complete here
             if not new_files:
                 self.logger.info("No new files to backup")
-                self.backup_completed.emit(0, self.destination_base)
+                self.backup_completed.emit(copied_count, skipped_count, self.destination_base)
                 return
             
-            copied_count = 0
-            total_files = len(new_files)
-            
-            for i, file_info in enumerate(new_files):
+            # Process new files (copy them)
+            for file_info in new_files:
                 if self.should_stop:
                     self.logger.info("Backup process aborted by user")
                     break
@@ -88,8 +108,10 @@ class BackupWorker(QThread):
                         self.drive_disconnected.emit("Destination drive disconnected", copied_count, total_files) # Destination drive disconnected
                         return
                     
-                    # Send progress update
-                    self.progress_updated.emit(i, total_files)
+                    processed_count += 1
+                    
+                    # Send progress update for file being copied
+                    self.progress_updated.emit(processed_count, total_files, copied_count, skipped_count)
                     self.file_copying.emit(file_info['name'])
                     
                     # Copy file
@@ -97,6 +119,8 @@ class BackupWorker(QThread):
                     if success:
                         copied_count += 1
                         self.logger.info(f"Successfully copied: {file_info['name']}")
+                        # Update progress after successful copy
+                        self.progress_updated.emit(processed_count, total_files, copied_count, skipped_count)
                     else:
                         self.logger.error(f"Copy failed: {file_info['name']}")
                 
@@ -121,14 +145,14 @@ class BackupWorker(QThread):
                         self.backup_error.emit(error_msg)
                         continue
             
-            # Send completion signal
-            self.progress_updated.emit(total_files, total_files)
+            # Send final completion signal
+            self.progress_updated.emit(total_files, total_files, copied_count, skipped_count)
             
             # Find the main destination folder (most used)
             main_destination = self.get_main_destination_folder()
             
-            self.logger.info(f"Backup complete, copied {copied_count} files, skipped {len(duplicates)} duplicate files")
-            self.backup_completed.emit(copied_count, main_destination)
+            self.logger.info(f"Backup complete, copied {copied_count} files, skipped {skipped_count} duplicate files")
+            self.backup_completed.emit(copied_count, skipped_count, main_destination)
             
         except Exception as e:
             error_msg = f"Serious error in backup process: {str(e)}"
@@ -207,19 +231,29 @@ class BackupWorker(QThread):
         if not self.files_list:
             return self.destination_base
         
-        # Count files in each folder
-        folder_counts = {}
+        # Collect folder information with dates and file counts
+        folder_info = {}
         
         for file_info in self.files_list:
             creation_date = file_info['creation_date']
             folder_name = FileDeduplicator.get_folder_name(file_info['type'], creation_date)
             folder_path = os.path.join(self.destination_base, folder_name)
             
-            folder_counts[folder_path] = folder_counts.get(folder_path, 0) + 1
+            if folder_path not in folder_info:
+                folder_info[folder_path] = {
+                    'count': 0,
+                    'latest_date': creation_date
+                }
+            
+            folder_info[folder_path]['count'] += 1
+            # Keep track of the latest date in this folder
+            if creation_date > folder_info[folder_path]['latest_date']:
+                folder_info[folder_path]['latest_date'] = creation_date
         
-        # Return the folder with the most files
-        if folder_counts:
-            main_folder = max(folder_counts.keys(), key=lambda k: folder_counts[k])
+        if folder_info:
+            # Prioritize by: 1) Most recent date, 2) Then by file count if dates are same
+            main_folder = max(folder_info.keys(),
+                            key=lambda k: (folder_info[k]['latest_date'], folder_info[k]['count']))
             return main_folder
         
         return self.destination_base
