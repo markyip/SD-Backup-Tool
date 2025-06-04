@@ -1,19 +1,13 @@
 # SD Card Backup Tool - README
 # SD卡備份工具 - 說明文件
 
-## Traditional Chinese (繁體中文)
-
-一個易於使用的工具，用於將SD卡中的檔案備份到本地磁碟機，注重易用性和可靠性。
-
+一個易於使用的工具，用於將SD卡中的檔案備份到本地磁碟機
 ### 功能特點
 
 - 簡單直觀的使用者介面
-- 自動偵測SD卡
 - 視覺化磁碟機選擇，顯示空間資訊
 - 檔案類型偵測（照片、影片、RAW檔案）
-- 備份進度追蹤
 - 可自訂語言支援
-- 錯誤處理和恢復選項
 
 ### 支援的檔案格式
 
@@ -125,19 +119,14 @@ sd_backup_tool/
 
 ---
 
-## English
-
 A user-friendly tool for backing up files from SD cards to local drives, with a focus on ease of use and reliability.
 
 ### Features
 
 - Simple and intuitive user interface
-- Automatic SD card detection
 - Visual drive selection with space information
 - File type detection (photos, videos, RAW files)
-- Progress tracking during backup
 - Customizable language support
-- Error handling and recovery options
 
 ### Supported File Formats
 
