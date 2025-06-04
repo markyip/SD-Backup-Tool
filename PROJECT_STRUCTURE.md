@@ -8,13 +8,15 @@ sd_backup_tool/
 ├── PROJECT_STRUCTURE.md
 ├── requirements.txt
 ├── main.py
-├── build_sd_backup_tool.bat
-├── run_sd_backup_tool.bat
 ├── build_config/
 │   ├── build.py
 │   ├── create_installer.py
 │   ├── installer.iss
 │   └── 相片影片備份工具.spec
+├── scripts/
+│   ├── build_sd_backup_tool.bat
+│   ├── run_sd_backup_tool.bat
+│   └── run_sd_backup_tool_conda.bat
 ├── core/
 │   ├── __init__.py
 │   ├── backup_worker.py
@@ -50,6 +52,11 @@ sd_backup_tool/
 │   ├── installer.iss   # Inno Setup installer configuration
 │   └── 相片影片備份工具.spec # PyInstaller spec file
 │
+├── scripts/            # Convenient batch files for different use cases
+│   ├── build_sd_backup_tool.bat      # Build executable batch file
+│   ├── run_sd_backup_tool.bat        # Run application (standard Python)
+│   └── run_sd_backup_tool_conda.bat  # Run application (Conda environment)
+│
 ├── core/               # Core functionality modules
 │   ├── sd_detector_fixed.py    # SD card detection
 │   ├── file_scanner.py         # File scanning logic
@@ -63,8 +70,6 @@ sd_backup_tool/
 │   ├── main_window_enhanced.py # Main application window
 │   └── drive_tile_widget.py    # Drive selection interface
 │
-├── build_sd_backup_tool.bat   # Build script for creating executable
-├── run_sd_backup_tool.bat     # Development script for running application
 ├── main.py            # Application entry point
 ├── requirements.txt   # Python package dependencies
 ├── LICENSE            # MIT license file
@@ -96,6 +101,11 @@ sd_backup_tool/
   - Creates single-file executable using PyInstaller
   - Bundles assets and dependencies
   - Cleans up build artifacts
+
+### Scripts
+
+The `scripts/` folder contains convenient batch files for different use cases:
+
 - **build_sd_backup_tool.bat**: User-friendly batch file for building
   - Validates Python installation
   - Checks for required files
@@ -103,7 +113,12 @@ sd_backup_tool/
   - Offers to run the application after building
 - **run_sd_backup_tool.bat**: Development batch file for running the application
   - Runs application directly with Python
+  - Automatically installs dependencies from requirements.txt
   - Includes error handling and validation
+- **run_sd_backup_tool_conda.bat**: Conda environment batch file
+  - Creates and manages isolated conda environment
+  - Handles dependency installation within conda environment
+  - Best for advanced users who prefer conda package management
 
 ## Workflow
 
@@ -137,7 +152,7 @@ sd_backup_tool/
 
 1. Run the build batch file:
    ```bash
-   build_sd_backup_tool.bat
+   scripts\build_sd_backup_tool.bat
    ```
 
 2. The batch file will:
@@ -179,8 +194,11 @@ sd_backup_tool/
 
 2. **Run in development mode:**
    ```bash
-   # Using batch file (recommended)
-   run_sd_backup_tool.bat
+   # Using batch file (recommended for standard Python)
+   scripts\run_sd_backup_tool.bat
+   
+   # Using conda environment (recommended for advanced users)
+   scripts\run_sd_backup_tool_conda.bat
    
    # Or directly with Python
    python main.py
@@ -188,7 +206,7 @@ sd_backup_tool/
 
 3. **Build for distribution:**
    ```bash
-   build_sd_backup_tool.bat
+   scripts\build_sd_backup_tool.bat
    ```
 
 ## Development Guidelines
@@ -204,9 +222,25 @@ sd_backup_tool/
    - Maintain formatting placeholders
 
 3. **Building Changes**
-   - Use `build_sd_backup_tool.bat` to create new executable
+   - Use `scripts\build_sd_backup_tool.bat` to create new executable
    - Test changes in the built version
    - Verify all features work as expected
+
+## Script Usage Guide
+
+### For New Users
+- Use `scripts\build_sd_backup_tool.bat` to create a standalone executable
+- The executable will be created in the `dist/` folder and can be run independently
+
+### For Developers
+- Use `scripts\run_sd_backup_tool.bat` for quick development and testing
+- Automatically handles dependency installation
+- Runs directly from source code
+
+### For Advanced Users
+- Use `scripts\run_sd_backup_tool_conda.bat` for isolated environment management
+- Creates and manages a dedicated conda environment
+- Handles all dependencies within the conda environment
 
 4. **Virtual Environment**
    - Always use a virtual environment for development

@@ -2,8 +2,8 @@
 echo Building SD Backup Tool...
 echo.
 
-REM Change to the script directory
-cd /d "%~dp0"
+REM Change to the project root directory (one level up from scripts)
+cd /d "%~dp0\.."
 
 REM Check if Python is available
 python --version >nul 2>&1
