@@ -29,7 +29,7 @@ The SD Card Backup Tool eliminates confusing options that often complicate the p
 * 檔案類型偵測（照片、影片、RAW檔案） / File type detection (photos, videos, RAW files)
 
 
-## 支援的檔案格式 | Supported File Formats 📷📹📑
+## 支援的檔案格式 | Supported File Formats
 
 ### 照片格式 | Photo Formats
 
