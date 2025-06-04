@@ -106,19 +106,6 @@ sd_backup_tool/
 └── requirements.txt   # Python依賴項目
 ```
 
-### 建置說明
-
-建置腳本（`build.py`）處理：
-- 依賴項目安裝
-- 執行檔建立
-- 資源打包
-- 建置暫存檔清理
-
-建置方式：
-```bash
-python build.py
-```
-
 ### 開發者
 
 本專案由以下開發者共同開發：
@@ -256,19 +243,6 @@ sd_backup_tool/
 ├── build.py           # Build script
 ├── main.py            # Application entry point
 └── requirements.txt   # Python dependencies
-```
-
-### Building
-
-The build script (`build.py`) handles:
-- Dependency installation
-- Executable creation
-- Asset bundling
-- Cleanup of build artifacts
-
-To build:
-```bash
-python build.py
 ```
 
 ### Developers
