@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
         self.video_result = QLabel(self.lang.get_text('videos', 0))
         self.video_result.setFont(QFont("Microsoft JhengHei", 20, QFont.Bold))
         self.video_result.setStyleSheet("""
-            QLabel {it
+            QLabel {
                 background-color: #ebf5fb;
                 border: 2px solid #3498db;
                 border-radius: 10px;
