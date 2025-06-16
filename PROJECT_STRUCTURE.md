@@ -80,9 +80,19 @@ sd_backup_tool/
 
 ### Core Modules
 
-- **sd_detector_fixed.py**: Handles SD card detection and monitoring
-- **file_scanner.py**: Implements file scanning and categorization
-- **backup_worker.py**: Manages the backup process and progress tracking
+- **sd_detector_fixed.py**: Handles SD card and MTP device detection and monitoring
+  - SD card detection via Windows drive enumeration
+  - MTP device detection via Windows COM interface
+  - Real-time device monitoring and notifications
+- **file_scanner.py**: Implements file scanning and categorization for both filesystem and MTP devices
+  - Recursive file scanning with media type detection
+  - MTP device scanning using Windows COM
+  - Smart file type recognition (photos, videos, RAW, camera files)
+  - Creation date extraction from file paths and metadata
+- **backup_worker.py**: Manages the backup process and progress tracking for all device types
+  - Multi-method MTP file copying with fallback strategies
+  - Duplicate file detection and skipping
+  - Organized folder structure creation (Photos_YYYY/MM/DD, Videos_YYYY/MM/DD, etc.)
 
 ### User Interface
 
@@ -127,19 +137,27 @@ The `scripts/` folder contains convenient batch files for different use cases:
    - Creates main window and UI components
    - Initializes language manager
 
-2. **SD Card Detection**
-   - `SDDetector` monitors for SD card insertion
-   - Updates UI when SD card is detected/removed
+2. **Device Detection**
+   - `SDDetector` monitors for both SD card and MTP device insertion
+   - Uses Windows COM interface for MTP device detection
+   - Updates UI when devices are detected/removed
+   - Supports phones, cameras, and other MTP-compatible devices
 
 3. **File Scanning**
    - User selects destination drive
-   - `FileScanner` scans for supported file types
-   - Updates UI with file statistics
+   - `FileScanner` scans for supported file types on selected source device
+   - For MTP devices: Uses COM interface for recursive scanning
+   - For SD cards: Uses standard filesystem scanning
+   - Smart detection of camera files (Sony DSC files, etc.)
+   - Updates UI with file statistics and type breakdown
 
 4. **Backup Process**
-   - `BackupWorker` handles file copying
-   - Updates progress in UI
-   - Handles errors and interruptions
+   - `BackupWorker` handles file copying with device-specific methods
+   - For MTP devices: Multiple copy strategies with fallback methods
+   - For SD cards: Direct filesystem copying
+   - Automatic folder organization by date and file type
+   - Duplicate file detection and skipping
+   - Real-time progress updates in UI
 
 5. **Language Support**
    - All UI text is loaded from `translations.py`
@@ -242,7 +260,29 @@ The `scripts/` folder contains convenient batch files for different use cases:
 - Creates and manages a dedicated conda environment
 - Handles all dependencies within the conda environment
 
-4. **Virtual Environment**
-   - Always use a virtual environment for development
-   - The `venv/` folder is excluded from git (see `.gitignore`)
-   - Each developer should create their own virtual environment
+## Technical Requirements & Dependencies
+
+### Core Dependencies
+- **PyQt5**: GUI framework for the user interface
+- **pywin32**: Windows COM interface for MTP device communication
+- **Pillow**: Image processing and EXIF data extraction
+- **win32com.client**: Windows Shell integration for device detection
+
+### MTP Support Requirements
+- **Windows 10/11 recommended**: Optimal MTP driver support
+- **COM interface**: Required for MTP device communication
+- **USB drivers**: Proper MTP device drivers must be installed
+- **Administrator privileges**: May be required for some MTP operations
+
+### Development Environment
+- **Python 3.8+**: Minimum Python version requirement
+- **Virtual environment**: Isolated development environment recommended
+- **Windows development**: Primary target platform
+- The `venv/` folder is excluded from git (see `.gitignore`)
+- Each developer should create their own virtual environment
+
+### Performance Considerations
+- **Memory usage**: MTP operations can be memory-intensive for large files
+- **USB connection quality**: High-quality USB 3.0 cables recommended
+- **Antivirus interference**: May need temporary disabling during file operations
+- **Device power management**: Keep devices from entering sleep mode during backup

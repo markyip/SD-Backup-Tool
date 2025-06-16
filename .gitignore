@@ -13,6 +13,13 @@ __pycache__/
 *.log
 error_log.txt
 
+# Python
+test_*.py
+
+# Markdown
+FIXES_SUMMARY.md
+FINAL_FIXES_SUMMARY.md
+
 # IDE specific files
 .vscode/
 .idea/ 

@@ -1,377 +1,608 @@
 # -*- coding: utf-8 -*-
 """
 Backup worker module
-Handles file copying and backup logic
+Handles file copying and backup logic from filesystem and MTP devices.
 """
 
 import os
+import sys
+import time
 import shutil
-import logging
+import hashlib
+import win32com.client
+import win32file
 from datetime import datetime
 from PyQt5.QtCore import QThread, pyqtSignal
-from .file_scanner import FileDeduplicator
+from threading import Lock
+
+# Remove wpd import and related code
+print("Using Windows COM for MTP operations.")
 
 class BackupWorker(QThread):
-    """Backup worker thread"""
-    
-    progress_updated = pyqtSignal(int, int, int, int)  # current progress, total count, copied count, skipped count
-    file_copying = pyqtSignal(str)           # name of the file being copied
-    file_skipping = pyqtSignal(str)          # name of the file being skipped
-    backup_completed = pyqtSignal(int, int, str)  # number of files copied, number of files skipped, destination path
-    backup_error = pyqtSignal(str)           # error message
-    drive_disconnected = pyqtSignal(str, int, int)  # error type, number of files copied, total files
+    progress_updated = pyqtSignal(int, int, int, int)
+    file_copying = pyqtSignal(str)
+    file_skipping = pyqtSignal(str)
+    backup_completed = pyqtSignal(int, int, str)
+    backup_error = pyqtSignal(str)
+    drive_disconnected = pyqtSignal(str, int, int)
     
     def __init__(self, files_list, destination_base):
         super().__init__()
         self.files_list = files_list
         self.destination_base = destination_base
         self.should_stop = False
-        
-        # Setup logging
         self.setup_logging()
-    
+        
     def setup_logging(self):
-        """Setup logging"""
-        log_dir = os.path.join(os.path.expanduser("~"), "Documents", "SDBackupToolLogs") # SD Backup Tool Logs
-        os.makedirs(log_dir, exist_ok=True)
+        """Setup logging for the worker"""
+        import logging
+        self.logger = logging.getLogger('BackupWorker')
+        self.logger.setLevel(logging.INFO)
         
-        log_file = os.path.join(log_dir, f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        # Create console handler
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
         
-        logging.basicConfig(
-            filename=log_file,
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            encoding='utf-8'
-        )
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
         
-        self.logger = logging.getLogger(__name__)
-        self.logger.info("Starting backup process")
-    
+        # Add handler to logger
+        self.logger.addHandler(ch)
+        
     def run(self):
-        """Execute backup process"""
+        """Main backup process"""
         try:
-            self.logger.info(f"Starting backup of {len(self.files_list)} files to {self.destination_base}")
+            total_files = len(self.files_list)
+            files_processed = 0
+            files_copied = 0
+            files_skipped = 0
             
-            # Check and filter duplicate files
-            new_files, duplicates = FileDeduplicator.find_duplicates_in_destination(
-                self.files_list, self.destination_base
-            )
+            # Create destination folders
+            self._create_destination_folders(self.files_list)
             
-            if duplicates:
-                self.logger.info(f"Skipping {len(duplicates)} duplicate files")
-            
-            copied_count = 0
-            skipped_count = 0
-            total_files = len(self.files_list)  # Total includes both new and duplicate files
-            processed_count = 0
-            
-            # Process duplicate files first (show as skipped)
-            for file_info in duplicates:
+            for file_info in self.files_list:
                 if self.should_stop:
-                    self.logger.info("Backup process aborted by user")
                     break
-                
-                processed_count += 1
-                skipped_count += 1
-                
-                # Send progress update for skipped file
-                self.progress_updated.emit(processed_count, total_files, copied_count, skipped_count)
-                self.file_skipping.emit(file_info['name'])
-                
-                self.logger.info(f"Skipped duplicate: {file_info['name']}")
-            
-            # If all files were duplicates, complete here
-            if not new_files:
-                self.logger.info("No new files to backup")
-                self.backup_completed.emit(copied_count, skipped_count, self.destination_base)
-                return
-            
-            # Process new files (copy them)
-            for file_info in new_files:
-                if self.should_stop:
-                    self.logger.info("Backup process aborted by user")
-                    break
+                    
+                files_processed += 1
+                self.progress_updated.emit(files_processed, total_files, files_copied, files_skipped)
                 
                 try:
-                    # Check source drive connectivity (SD card)
-                    source_drive = os.path.splitdrive(file_info['path'])[0] + '\\'
-                    if not self.check_drive_connectivity(source_drive):
-                        error_msg = f"SD card disconnected: Cannot access {source_drive}"
-                        self.logger.error(error_msg)
-                        self.drive_disconnected.emit("SD card disconnected", copied_count, total_files) # SD card disconnected
-                        return
+                    destination_path = file_info.get('destination')
+                    if not destination_path:
+                        print(f"No destination path for file: {file_info.get('name', 'unknown')}")
+                        files_skipped += 1
+                        continue
                     
-                    # Check destination drive connectivity
-                    if not self.check_drive_connectivity(self.destination_base):
-                        error_msg = f"Destination drive disconnected: Cannot access {self.destination_base}"
-                        self.logger.error(error_msg)
-                        self.drive_disconnected.emit("Destination drive disconnected", copied_count, total_files) # Destination drive disconnected
-                        return
+                    # Ensure destination directory exists
+                    dest_dir = os.path.dirname(destination_path)
+                    if not os.path.exists(dest_dir):
+                        os.makedirs(dest_dir, exist_ok=True)
+                        print(f"Created directory: {dest_dir}")
                     
-                    processed_count += 1
+                    # Check if file already exists
+                    if os.path.exists(destination_path):
+                        print(f"Skipping existing file: {file_info['name']}")
+                        self.file_skipping.emit(file_info['name'])
+                        files_skipped += 1
+                        continue
                     
-                    # Send progress update for file being copied
-                    self.progress_updated.emit(processed_count, total_files, copied_count, skipped_count)
+                    # Copy the file
+                    print(f"Copying file: {file_info['name']}")
                     self.file_copying.emit(file_info['name'])
                     
-                    # Copy file
-                    success = self.copy_file(file_info)
-                    if success:
-                        copied_count += 1
-                        self.logger.info(f"Successfully copied: {file_info['name']}")
-                        # Update progress after successful copy
-                        self.progress_updated.emit(processed_count, total_files, copied_count, skipped_count)
+                    if self.copy_file_item(file_info):
+                        files_copied += 1
+                        print(f"Successfully copied: {file_info['name']} to {destination_path}")
                     else:
-                        self.logger.error(f"Copy failed: {file_info['name']}")
-                
+                        files_skipped += 1
+                        print(f"Failed to copy: {file_info['name']}")
+                        
                 except Exception as e:
-                    # Check if it's a drive disconnection error
-                    if self.is_drive_disconnection_error(e):
-                        # Re-check drive status
-                        source_drive = os.path.splitdrive(file_info['path'])[0] + '\\'
-                        if not self.check_drive_connectivity(source_drive):
-                            self.logger.error(f"SD card disconnected: {str(e)}")
-                            self.drive_disconnected.emit("SD card disconnected", copied_count, total_files) # SD card disconnected
-                        elif not self.check_drive_connectivity(self.destination_base):
-                            self.logger.error(f"Destination drive disconnected: {str(e)}")
-                            self.drive_disconnected.emit("Destination drive disconnected", copied_count, total_files) # Destination drive disconnected
-                        else:
-                            self.logger.error(f"Unknown drive error: {str(e)}")
-                            self.drive_disconnected.emit("Drive connection anomaly", copied_count, total_files) # Drive connection anomaly
-                        return
+                    print(f"Error processing file {file_info.get('name', 'unknown')}: {e}")
+                    import traceback
+                    print(f"Traceback: {traceback.format_exc()}")
+                    files_skipped += 1
+                    
+            # Emit final results
+            if not self.should_stop:
+                self.backup_completed.emit(files_processed, files_copied, self.destination_base)
+                
+        except Exception as e:
+            print(f"Error in backup process: {e}")
+            self.backup_error.emit(str(e))
+            
+    def copy_file_item(self, file_info):
+        """Copy a file item, handling both regular files and MTP files"""
+        try:
+            print(f"[copy_file_item] Starting copy for: {file_info['name']}")
+            
+            # For MTP files, use the COM interface
+            if file_info.get('is_mtp', False):
+                print(f"[copy_file_item] Using MTP copy for: {file_info['name']}")
+                return self.copy_com_mtp_file(file_info, file_info['destination'])
+            
+            # For regular files, use direct file system copy
+            print(f"[copy_file_item] Using direct file copy for: {file_info['name']}")
+            try:
+                # Ensure destination directory exists
+                dest_dir = os.path.dirname(file_info['destination'])
+                os.makedirs(dest_dir, exist_ok=True)
+                
+                # Copy the file
+                shutil.copy2(file_info['source'], file_info['destination'])
+                
+                # Verify the copy
+                if os.path.exists(file_info['destination']):
+                    if os.path.getsize(file_info['destination']) == os.path.getsize(file_info['source']):
+                        print(f"[copy_file_item] Successfully copied: {file_info['name']}")
+                        return True
                     else:
-                        error_msg = f"Error copying file: {file_info['name']} - {str(e)}"
-                        self.logger.error(error_msg)
-                        self.backup_error.emit(error_msg)
-                        continue
+                        print(f"[copy_file_item] File size mismatch for: {file_info['name']}")
+                        return False
+                else:
+                    print(f"[copy_file_item] Destination file not found: {file_info['destination']}")
+                    return False
+                    
+            except Exception as e:
+                print(f"[copy_file_item] Error copying file: {e}")
+                import traceback
+                print(f"[copy_file_item] Traceback: {traceback.format_exc()}")
+                return False
+                
+        except Exception as e:
+            print(f"[copy_file_item] Error in copy_file_item: {e}")
+            import traceback
+            print(f"[copy_file_item] Traceback: {traceback.format_exc()}")
+            return False
             
-            # Send final completion signal
-            self.progress_updated.emit(total_files, total_files, copied_count, skipped_count)
+    def copy_com_mtp_file(self, file_info, destination_file_path):
+        """Copy a file from an MTP device using COM interface"""
+        try:
+            print(f"[copy_com_mtp_file] Attempting to copy: {file_info['name']} to {destination_file_path}")
             
-            # Find the main destination folder (most used)
-            main_destination = self.get_main_destination_folder()
+            # Get the COM item from the file info
+            com_item = file_info.get('com_item')
+            if not com_item:
+                print(f"[copy_com_mtp_file] No COM item found in file_info for: {file_info['name']}")
+                return False
             
-            self.logger.info(f"Backup complete, copied {copied_count} files, skipped {skipped_count} duplicate files")
-            self.backup_completed.emit(copied_count, skipped_count, main_destination)
+            print(f"[copy_com_mtp_file] Using stored COM item for: {file_info['name']}")
+            
+            # Try the most reliable copy method first (based on previous success)
+            methods = [
+                self._copy_com_direct_to_destination,  # This one worked, try first
+                self._copy_com_simple,
+                self._copy_com_via_drag_drop
+            ]
+            
+            for i, method in enumerate(methods):
+                try:
+                    print(f"[copy_com_mtp_file] Trying copy method {i+1}/3: {method.__name__}")
+                    result = method(com_item, destination_file_path, file_info)
+                    print(f"[copy_com_mtp_file] Result of {method.__name__}: {result}")
+                    if result:
+                        print(f"[copy_com_mtp_file] Successfully copied using {method.__name__}")
+                        return True
+                    else:
+                        print(f"[copy_com_mtp_file] Method {method.__name__} returned False, trying next method")
+                except Exception as e:
+                    print(f"[copy_com_mtp_file] Method {method.__name__} failed with exception: {e}")
+                    continue
+            
+            print("[copy_com_mtp_file] All copy methods failed")
+            return False
             
         except Exception as e:
-            error_msg = f"Serious error in backup process: {str(e)}"
-            self.logger.error(error_msg)
-            self.backup_error.emit(error_msg)
-    
-    def copy_file(self, file_info):
-        """Copy a single file"""
+            print(f"[copy_com_mtp_file] Error in copy_com_mtp_file: {e}")
+            import traceback
+            print(f"[copy_com_mtp_file] Traceback: {traceback.format_exc()}")
+            return False
+            
+    def _copy_com_simple(self, com_item, destination_file_path, file_info):
+        """Copy a file using direct data transfer from COM object"""
         try:
-            source_path = file_info['path']
+            print(f"[_copy_com_simple] Starting direct copy for {file_info['name']}")
             
-            # Generate destination folder path
-            creation_date = file_info['creation_date']
-            folder_name = FileDeduplicator.get_folder_name(file_info['type'], creation_date)
-            destination_dir = os.path.join(self.destination_base, folder_name)
+            # Ensure destination directory exists
+            dest_dir = os.path.dirname(destination_file_path)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+                print(f"[_copy_com_simple] Created destination directory: {dest_dir}")
             
-            # Ensure destination folder exists
-            os.makedirs(destination_dir, exist_ok=True)
-            
-            # Generate destination file path
-            destination_path = os.path.join(destination_dir, file_info['name'])
-            
-            # Handle filename conflicts (different files with the same name)
-            destination_path = self.handle_filename_conflict(destination_path, source_path)
-            
-            # Re-check if source file exists before copying
-            if not os.path.exists(source_path):
-                raise FileNotFoundError(f"Source file not found: {source_path}")
-            
-            # Copy file
-            shutil.copy2(source_path, destination_path)
-            
-            # Verify if copy was successful
-            if os.path.exists(destination_path):
-                source_size = os.path.getsize(source_path)
-                dest_size = os.path.getsize(destination_path)
-                if source_size == dest_size:
-                    return True
+            # Get the file data using COM
+            try:
+                print(f"[_copy_com_simple] Getting file data from COM object")
+                # Try to get the file data using different COM properties
+                file_data = None
+                
+                # Method 1: Try to get data using GetDetailsOf
+                try:
+                    shell = win32com.client.Dispatch("Shell.Application")
+                    folder = shell.NameSpace(os.path.dirname(com_item.Path))
+                    if folder:
+                        for i in range(512):  # Try different property indices
+                            try:
+                                prop = folder.GetDetailsOf(com_item, i)
+                                if prop and len(prop) > 0:
+                                    print(f"[_copy_com_simple] Found property at index {i}: {prop[:100]}")
+                            except:
+                                continue
+                except Exception as e:
+                    print(f"[_copy_com_simple] Error getting details: {e}")
+                
+                # Method 2: Try to get data using Stream
+                try:
+                    if hasattr(com_item, 'GetStream'):
+                        stream = com_item.GetStream()
+                        if stream:
+                            file_data = stream.Read()
+                            print(f"[_copy_com_simple] Got file data using GetStream, size: {len(file_data) if file_data else 0}")
+                except Exception as e:
+                    print(f"[_copy_com_simple] Error getting stream: {e}")
+                
+                # Method 3: Try to get data using CopyTo
+                if not file_data:
+                    try:
+                        temp_path = os.path.join(os.environ['TEMP'], f"temp_{file_info['name']}")
+                        com_item.CopyTo(temp_path)
+                        if os.path.exists(temp_path):
+                            with open(temp_path, 'rb') as f:
+                                file_data = f.read()
+                            os.remove(temp_path)
+                            print(f"[_copy_com_simple] Got file data using CopyTo, size: {len(file_data) if file_data else 0}")
+                    except Exception as e:
+                        print(f"[_copy_com_simple] Error using CopyTo: {e}")
+                
+                # Write the data to the destination file
+                if file_data:
+                    print(f"[_copy_com_simple] Writing data to {destination_file_path}")
+                    with open(destination_file_path, 'wb') as f:
+                        f.write(file_data)
+                    
+                    # Verify the file was written
+                    if os.path.exists(destination_file_path):
+                        print(f"[_copy_com_simple] File successfully written to {destination_file_path}")
+                        return True
+                    else:
+                        print(f"[_copy_com_simple] File was not written successfully")
+                        return False
                 else:
-                    self.logger.error(f"File size mismatch: {file_info['name']}")
+                    print(f"[_copy_com_simple] Could not get file data using any method")
                     return False
-            else:
-                self.logger.error(f"Destination file not found: {destination_path}")
+                
+            except Exception as e:
+                print(f"[_copy_com_simple] Error during file transfer: {e}")
+                import traceback
+                print(f"[_copy_com_simple] Traceback: {traceback.format_exc()}")
                 return False
             
         except Exception as e:
-            self.logger.error(f"Failed to copy file: {file_info['name']} - {str(e)}")
+            print(f"[_copy_com_simple] Error in _copy_com_simple: {e}")
+            import traceback
+            print(f"[_copy_com_simple] Traceback: {traceback.format_exc()}")
             return False
-    
-    def handle_filename_conflict(self, destination_path, source_path):
-        """Handle filename conflicts"""
-        if not os.path.exists(destination_path):
-            return destination_path
-        
-        # Check if it's the same file (avoid duplicate copying)
-        if FileDeduplicator.is_duplicate(source_path, os.path.dirname(destination_path)):
-            return destination_path
-        
-        # Filename conflict, generate new filename
-        base_name, extension = os.path.splitext(destination_path)
-        counter = 1
-        
-        while os.path.exists(destination_path):
-            new_name = f"{base_name}_{counter}{extension}"
-            destination_path = new_name
-            counter += 1
             
-            # Avoid infinite loop
-            if counter > 1000:
-                raise Exception("Cannot generate unique filename")
-        
-        return destination_path
-    
-    def get_main_destination_folder(self):
-        """Get the main destination folder path"""
-        if not self.files_list:
+    def _copy_com_direct_to_destination(self, com_item, destination_file_path, file_info):
+        """Copy COM item directly to destination"""
+        try:
+            print(f"[_copy_com_direct_to_destination] Starting direct copy to {destination_file_path}")
+            
+            # Ensure destination directory exists
+            dest_dir = os.path.dirname(destination_file_path)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+                print(f"[_copy_com_direct_to_destination] Created destination directory: {dest_dir}")
+            
+            # Get the destination folder as a shell folder
+            shell = win32com.client.Dispatch("Shell.Application")
+            dest_folder = shell.NameSpace(dest_dir)
+            
+            if not dest_folder:
+                print(f"[_copy_com_direct_to_destination] Failed to get shell namespace for destination: {dest_dir}")
+                return False
+            
+            # Copy the file using CopyHere with maximum silence flags
+            print(f"[_copy_com_direct_to_destination] Copying to {dest_dir}")
+            # Use all possible silence flags to suppress Windows dialogs completely
+            # FOF_SILENT (4), FOF_NOCONFIRMATION (16), FOF_NOCONFIRMMKDIR (512), FOF_NOERRORUI (1024), FOF_NOCOPYSECURITYATTRIBS (2048)
+            # Adding FOF_MULTIDESTFILES (1) and FOF_FILESONLY (128) for better compatibility
+            silent_flags = 4 | 16 | 512 | 1024 | 2048 | 128
+            print(f"[_copy_com_direct_to_destination] Using flags: {silent_flags}")
+            dest_folder.CopyHere(com_item, silent_flags)
+            
+            # Wait for the file to appear with shorter timeout for better performance
+            timeout = 10  # seconds (reduced from 30)
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if os.path.exists(destination_file_path):
+                    print(f"[_copy_com_direct_to_destination] File appeared at {destination_file_path}")
+                    return True
+                time.sleep(0.2)  # Check more frequently
+            
+            # Check one more time - sometimes files appear after timeout
+            if os.path.exists(destination_file_path):
+                print(f"[_copy_com_direct_to_destination] File appeared after timeout: {destination_file_path}")
+                return True
+            
+            print(f"[_copy_com_direct_to_destination] Timeout waiting for file to appear: {destination_file_path}")
+            return False
+            
+        except Exception as e:
+            print(f"[_copy_com_direct_to_destination] Error in _copy_com_direct_to_destination: {e}")
+            import traceback
+            print(f"[_copy_com_direct_to_destination] Traceback: {traceback.format_exc()}")
+            return False
+            
+    def _copy_com_via_drag_drop(self, com_item, destination_file_path, file_info):
+        """Copy COM item using drag and drop simulation"""
+        try:
+            print(f"[_copy_com_via_drag_drop] Starting drag and drop copy to {destination_file_path}")
+            
+            # Ensure destination directory exists
+            dest_dir = os.path.dirname(destination_file_path)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+                print(f"[_copy_com_via_drag_drop] Created destination directory: {dest_dir}")
+            
+            # Get the destination folder as a shell folder
+            shell = win32com.client.Dispatch("Shell.Application")
+            dest_folder = shell.NameSpace(dest_dir)
+            
+            if not dest_folder:
+                print(f"[_copy_com_via_drag_drop] Failed to get shell namespace for destination: {dest_dir}")
+                return False
+            
+            # Create a temporary folder for the source
+            temp_dir = os.path.join(os.environ['TEMP'], 'mtp_backup_temp')
+            if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+            
+            # Get the source folder
+            source_folder = shell.NameSpace(os.path.dirname(com_item.Path))
+            if not source_folder:
+                print(f"[_copy_com_via_drag_drop] Failed to get shell namespace for source")
+                return False
+            
+            # Copy using drag and drop
+            print(f"[_copy_com_via_drag_drop] Starting drag and drop operation")
+            source_folder.CopyHere(com_item, 4 | 16 | 512 | 1024 | 8192)  # All UI suppression flags
+            
+            # Wait for the file to appear
+            timeout = 30  # seconds
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if os.path.exists(destination_file_path):
+                    print(f"[_copy_com_via_drag_drop] File appeared at {destination_file_path}")
+                    return True
+                time.sleep(0.5)
+            
+            print(f"[_copy_com_via_drag_drop] Timeout waiting for file to appear: {destination_file_path}")
+            return False
+            
+        except Exception as e:
+            print(f"[_copy_com_via_drag_drop] Error in _copy_com_via_drag_drop: {e}")
+            import traceback
+            print(f"[_copy_com_via_drag_drop] Traceback: {traceback.format_exc()}")
+            return False
+            
+    def get_main_destination_folder(self, files_processed_list):
+        """Get the main destination folder for the backup"""
+        if not files_processed_list:
             return self.destination_base
-        
-        # Collect folder information with dates and file counts
-        folder_info = {}
-        
-        for file_info in self.files_list:
-            creation_date = file_info['creation_date']
-            folder_name = FileDeduplicator.get_folder_name(file_info['type'], creation_date)
-            folder_path = os.path.join(self.destination_base, folder_name)
             
-            if folder_path not in folder_info:
-                folder_info[folder_path] = {
-                    'count': 0,
-                    'latest_date': creation_date
+        # Get the most common date from the processed files
+        dates = [f.get('creation_date') for f in files_processed_list if f.get('creation_date')]
+        if not dates:
+            return self.destination_base
+            
+        most_common_date = max(set(dates), key=dates.count)
+        return os.path.join(self.destination_base, most_common_date.strftime('%Y-%m-%d'))
+        
+    def check_drive_connectivity(self, path_to_check, is_destination=False):
+        """Check if a drive is still connected"""
+        try:
+            if is_destination:
+                # For destination, just check if the path exists
+                return os.path.exists(path_to_check)
+            else:
+                # For source, try to access the COM object
+                return True  # We'll handle MTP disconnection in the copy process
+        except Exception as e:
+            print(f"Error checking drive connectivity: {e}")
+            return False
+            
+    def stop(self):
+        """Stop the backup process"""
+        self.should_stop = True
+        
+    def is_potential_sd_card(self, drive_path, return_details=False):
+        """Check if a drive is likely to be an SD card"""
+        try:
+            # Get drive information
+            drive_info = win32file.GetVolumeInformation(drive_path)
+            
+            # Check if it's removable
+            is_removable = win32file.GetDriveType(drive_path) == win32file.DRIVE_REMOVABLE
+            
+            # Check size (SD cards are typically 2GB to 2TB)
+            total_bytes = win32file.GetDiskFreeSpace(drive_path)
+            total_gb = (total_bytes[0] * total_bytes[1] * total_bytes[2]) / (1024**3)
+            
+            if return_details:
+                return {
+                    'is_removable': is_removable,
+                    'total_gb': total_gb,
+                    'is_potential_sd': is_removable and 2 <= total_gb <= 2048
                 }
             
-            folder_info[folder_path]['count'] += 1
-            # Keep track of the latest date in this folder
-            if creation_date > folder_info[folder_path]['latest_date']:
-                folder_info[folder_path]['latest_date'] = creation_date
-        
-        if folder_info:
-            # Prioritize by: 1) Most recent date, 2) Then by file count if dates are same
-            main_folder = max(folder_info.keys(),
-                            key=lambda k: (folder_info[k]['latest_date'], folder_info[k]['count']))
-            return main_folder
-        
-        return self.destination_base
-    
-    def check_drive_connectivity(self, path):
-        """Check drive connectivity status"""
-        try:
-            # Check if path exists and is accessible
-            return os.path.exists(path) and os.access(path, os.R_OK | os.W_OK)
-        except Exception:
+            return is_removable and 2 <= total_gb <= 2048
+            
+        except Exception as e:
+            print(f"Error checking SD card: {e}")
             return False
-    
-    def is_drive_disconnection_error(self, error):
-        """Determine if it's a drive disconnection error"""
-        error_str = str(error).lower()
-        disconnection_indicators = [
-            'device not ready',
-            'the system cannot find the path',
-            'no such file or directory',
-            'access is denied',
-            'the network path was not found',
-            'device is not ready',
-            'the specified path is invalid',
-            'drive not ready',
-            'device not found'
-        ]
-        return any(indicator in error_str for indicator in disconnection_indicators)
-
-    def stop(self):
-        """Stop backup process"""
-        self.should_stop = True
-
+            
+    def copy_with_recovery(self, source, destination):
+        """Copy a file with recovery options"""
+        try:
+            # Ensure destination directory exists
+            dest_dir = os.path.dirname(destination)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+            
+            # Copy the file
+            shutil.copy2(source, destination)
+            
+            # Verify the copy
+            if os.path.exists(destination):
+                if os.path.getsize(destination) == os.path.getsize(source):
+                    return True
+            return False
+            
+        except Exception as e:
+            print(f"Error in copy_with_recovery: {e}")
+            return False
+            
+    def _create_destination_folders(self, files_list):
+        """Create destination folders for the backup"""
+        try:
+            # Get unique destination directories from files
+            destination_dirs = set()
+            for file_info in files_list:
+                destination_file = file_info.get('destination')
+                if destination_file:
+                    dest_dir = os.path.dirname(destination_file)
+                    destination_dirs.add(dest_dir)
+            
+            # Create all destination directories
+            for dest_dir in destination_dirs:
+                if not os.path.exists(dest_dir):
+                    os.makedirs(dest_dir, exist_ok=True)
+                    print(f"Created folder: {dest_dir}")
+                    
+        except Exception as e:
+            print(f"Error creating destination folders: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            
 class BackupValidator:
-    """Backup validator"""
-    
     @staticmethod
     def validate_backup(source_files, destination_base):
-        """Validate backup integrity"""
-        validation_result = {
-            'total_checked': 0,
-            'successful': 0,
-            'failed': 0,
-            'missing': 0,
-            'size_mismatch': 0,
-            'failed_files': []
-        }
-        
-        for file_info in source_files:
-            validation_result['total_checked'] += 1
+        """Validate the backup by comparing source and destination files"""
+        try:
+            results = {
+                'total_files': len(source_files),
+                'validated_files': 0,
+                'missing_files': [],
+                'size_mismatches': [],
+                'hash_mismatches': []
+            }
             
-            try:
-                # Calculate destination file path
-                creation_date = file_info['creation_date']
-                folder_name = FileDeduplicator.get_folder_name(file_info['type'], creation_date)
-                destination_dir = os.path.join(destination_base, folder_name)
-                destination_path = os.path.join(destination_dir, file_info['name'])
+            for file_info in source_files:
+                dest_path = os.path.join(destination_base, file_info['name'])
                 
-                # Check if file exists
-                if not os.path.exists(destination_path):
-                    validation_result['missing'] += 1
-                    validation_result['failed_files'].append({
-                        'file': file_info['name'],
-                        'error': 'File not found' # File not found
-                    })
+                if not os.path.exists(dest_path):
+                    results['missing_files'].append(file_info['name'])
                     continue
-                
-                # Check file size
-                source_size = os.path.getsize(file_info['path'])
-                dest_size = os.path.getsize(destination_path)
-                
-                if source_size != dest_size:
-                    validation_result['size_mismatch'] += 1
-                    validation_result['failed_files'].append({
-                        'file': file_info['name'],
-                        'error': f'File size mismatch (source: {source_size}, destination: {dest_size})' # File size mismatch (source: {source_size}, destination: {dest_size})
-                    })
+                    
+                if os.path.getsize(dest_path) != file_info.get('size', 0):
+                    results['size_mismatches'].append(file_info['name'])
                     continue
+                    
+                results['validated_files'] += 1
                 
-                validation_result['successful'] += 1
-                
-            except Exception as e:
-                validation_result['failed'] += 1
-                validation_result['failed_files'].append({
-                    'file': file_info['name'],
-                    'error': str(e)
-                })
-        
-        return validation_result
-    
+            return results
+            
+        except Exception as e:
+            print(f"Error validating backup: {e}")
+            return None
+            
     @staticmethod
     def generate_validation_report(validation_result, output_path=None):
-        """Generate validation report"""
-        report_lines = [
-            "=== Backup Validation Report ===", # Backup Validation Report
-            f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", # Generated at:
-            "",
-            f"Total files checked: {validation_result['total_checked']}", # Total files checked:
-            f"Successfully backed up: {validation_result['successful']}", # Successfully backed up:
-            f"Files missing: {validation_result['missing']}", # Files missing:
-            f"Size mismatch: {validation_result['size_mismatch']}", # Size mismatch:
-            f"Other errors: {validation_result['failed']}", # Other errors:
-            ""
-        ]
+        """Generate a validation report"""
+        try:
+            report = []
+            report.append("Backup Validation Report")
+            report.append("=====================")
+            report.append(f"Total files: {validation_result['total_files']}")
+            report.append(f"Validated files: {validation_result['validated_files']}")
+            report.append(f"Missing files: {len(validation_result['missing_files'])}")
+            report.append(f"Size mismatches: {len(validation_result['size_mismatches'])}")
+            report.append(f"Hash mismatches: {len(validation_result['hash_mismatches'])}")
+            
+            if validation_result['missing_files']:
+                report.append("\nMissing Files:")
+                for file in validation_result['missing_files']:
+                    report.append(f"  - {file}")
+                    
+            if validation_result['size_mismatches']:
+                report.append("\nSize Mismatches:")
+                for file in validation_result['size_mismatches']:
+                    report.append(f"  - {file}")
+                    
+            if validation_result['hash_mismatches']:
+                report.append("\nHash Mismatches:")
+                for file in validation_result['hash_mismatches']:
+                    report.append(f"  - {file}")
+                    
+            report_text = "\n".join(report)
+            
+            if output_path:
+                with open(output_path, 'w') as f:
+                    f.write(report_text)
+                    
+            return report_text
+            
+        except Exception as e:
+            print(f"Error generating validation report: {e}")
+            return None
+            
+class ResourceManager:
+    def __init__(self):
+        """Initialize resource manager"""
+        self.com_objects = []
         
-        if validation_result['failed_files']:
-            report_lines.append("=== Failed File Details ===") # Failed File Details
-            for failed_file in validation_result['failed_files']:
-                report_lines.append(f"File: {failed_file['file']}") # File:
-                report_lines.append(f"Error: {failed_file['error']}") # Error:
-                report_lines.append("")
+    def __enter__(self):
+        """Enter context"""
+        return self
         
-        report_content = "\n".join(report_lines)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context"""
+        self.cleanup()
         
-        if output_path:
+    def cleanup(self):
+        """Cleanup COM objects"""
+        for obj in self.com_objects:
             try:
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(report_content)
-            except Exception as e:
-                print(f"Could not write validation report: {e}") # Could not write validation report:
+                obj.Release()
+            except:
+                pass
+        self.com_objects = []
         
-        return report_content
+class FileOperationManager:
+    def __init__(self):
+        """Initialize file operation manager"""
+        self.locks = {}
+        
+    def get_operation_lock(self, path):
+        """Get a lock for a file operation"""
+        if path not in self.locks:
+            self.locks[path] = Lock()
+        return self.locks[path]
+        
+    def perform_operation(self, path, operation):
+        """Perform a file operation with locking"""
+        with self.get_operation_lock(path):
+            return operation()
+            
+class PathHandler:
+    @staticmethod
+    def normalize_path(path):
+        """Normalize a path for Windows"""
+        # Handle long paths
+        if path.startswith('\\\\?\\'):
+            return path
+        if len(path) > 260:
+            return f'\\\\?\\{os.path.abspath(path)}'
+        return os.path.abspath(path)

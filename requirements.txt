@@ -1,3 +1,6 @@
 PyQt5==5.15.10
 Pillow==10.1.0
 pywin32==306
+pymtp==0.0.6
+# python-wpd - Not available via pip, using Windows API fallback for MTP detection
+# Additional MTP support via pymtp and Windows COM interfaces

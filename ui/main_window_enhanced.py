@@ -132,6 +132,30 @@ class MainWindow(QMainWindow):
         self.refresh_button.clicked.connect(self.refresh_drives)
         status_layout.addWidget(self.refresh_button)
         
+        # Add manual scan button for MTP devices
+        self.scan_button = QPushButton("Scan Device")
+        self.scan_button.setFont(QFont("Microsoft JhengHei", 12))
+        self.scan_button.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2ecc71;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+            }
+        """)
+        self.scan_button.clicked.connect(self.manual_scan)
+        self.scan_button.setEnabled(False)
+        status_layout.addWidget(self.scan_button)
+        
         self.sd_status_label = QLabel(self.lang.get_text('searching_sd'))
         self.sd_status_label.setFont(QFont("Microsoft JhengHei", 13))
         self.sd_status_label.setStyleSheet("padding: 15px; background-color: #f8f9fa; border-radius: 8px;")
@@ -191,7 +215,7 @@ class MainWindow(QMainWindow):
         self.video_result = QLabel(self.lang.get_text('videos', 0))
         self.video_result.setFont(QFont("Microsoft JhengHei", 20, QFont.Bold))
         self.video_result.setStyleSheet("""
-            QLabel {
+            QLabel {it
                 background-color: #ebf5fb;
                 border: 2px solid #3498db;
                 border-radius: 10px;
@@ -330,11 +354,11 @@ class MainWindow(QMainWindow):
             self.settings.setValue('last_destination', selected_drive)
     
     def refresh_drives(self):
-        """Refresh drives"""
-        print("Refreshing drives...")
-        self.update_destination_drives()
-        if hasattr(self, 'sd_detector'):
-            self.sd_detector.check_drives()
+        """Refresh the list of available drives"""
+        try:
+            self.sd_detector.check_drives()  # Use check_drives instead of force_refresh
+        except Exception as e:
+            print(f"Error refreshing drives: {e}")
     
     def update_destination_drives(self):
         """Update destination drive list"""
@@ -399,70 +423,141 @@ class MainWindow(QMainWindow):
         """Handle drive selection event"""
         self.save_settings()
         self.status_label.setText(f"Destination selected: {drive_path}")
+        self._update_smart_scanning()
     
-    def on_sd_card_detected(self, drive_path):
-        """Handle SD card detection"""
-        self.sd_status_label.setText(self.lang.get_text('sd_detected', drive_path))
+    def _update_smart_scanning(self):
+        """Update smart scanning when both source and destination are selected"""
+        if hasattr(self, 'current_sd_drive') and self.current_sd_drive and hasattr(self, 'drive_selector'):
+            source_device_id = self.current_sd_drive.get('id')
+            destination_drive = self.drive_selector.get_selected_drive()
+            
+            if source_device_id and destination_drive:
+                print(f"Both devices selected - enabling smart scanning")
+                # Check if smart scanning method exists (for backward compatibility)
+                if hasattr(self.sd_detector, 'set_selected_devices'):
+                    try:
+                        self.sd_detector.set_selected_devices(source_device_id, destination_drive)
+                    except Exception as e:
+                        print(f"Error enabling smart scanning: {e}")
+                else:
+                    print("Smart scanning not available - using regular scanning")
+    
+    def on_sd_card_detected(self, device_info: dict):
+        """Handle SD card/MTP device detection.
+        device_info: {'id': str, 'name': str, 'type': str, 'path': str}
+        """
+        # Use device_info['name'] for display, device_info['id'] for processing
+        display_name = device_info.get('name', 'Unknown Device')
+        device_id = device_info.get('id') # This is what scanner and backup worker use
+
+        self.sd_status_label.setText(self.lang.get_text('device_detected', display_name)) # New lang string
         self.sd_status_label.setStyleSheet("padding: 15px; background-color: #d5edda; border-radius: 8px; color: #155724;")
         self.status_label.setText("")
-        self.current_sd_drive = drive_path
+        self.current_sd_drive = device_info # Store the whole dict
         
-        self.drive_selector.set_sd_card_drive(drive_path)
-        self.start_scan()
+        # Enable scan button for MTP devices
+        if device_info.get('type') == 'MTP':
+            self.scan_button.setEnabled(True)
+        
+        # Pass the device_id (e.g., "D:\" or "MTP:XYZ") to drive_selector and scanner
+        self.drive_selector.set_sd_card_drive(device_id)
+        self._update_smart_scanning()  # Check if we can enable smart scanning
+        self.start_scan() # start_scan will use self.current_sd_drive['id']
     
-    def on_sd_card_removed(self):
-        """Handle SD card removal"""
-        self.sd_status_label.setText(self.lang.get_text('searching_sd'))
-        self.sd_status_label.setStyleSheet("padding: 15px; background-color: #f8f9fa; border-radius: 8px;")
-        self.scanned_files = []
-        self.photo_result.hide()
-        self.video_result.hide()
-        # Ensure the file scan tile remains visible
-        self.photo_result.show()
-        self.video_result.show()
-        self.backup_button.setEnabled(False)
-        self.status_label.setText(self.lang.get_text('sd_removed'))
-        self.current_sd_drive = None
-        
-        self.drive_selector.set_sd_card_drive(None)
-        
-        self.photo_result.setText(self.lang.get_text('photos', 0))
-        self.video_result.setText(self.lang.get_text('videos', 0))
-        self.raw_result.setText(self.lang.get_text('raw_files', 0))
-        self.total_result.setText(self.lang.get_text('total_size', 0))
-        
-        self.drive_selector.show_all_drives()
-    
+    def on_sd_card_removed(self, removed_device_id: str):
+        """Handle SD card/MTP device removal."""
+        # Check if the removed device is the one currently being processed
+        current_processing_id = None
+        if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
+            current_processing_id = self.current_sd_drive.get('id')
+
+        if current_processing_id == removed_device_id or not self.sd_detector.current_sd_drives:
+            # If the active device was removed, or no devices are left, reset UI
+            self.sd_status_label.setText(self.lang.get_text('searching_sd'))
+            self.sd_status_label.setStyleSheet("padding: 15px; background-color: #f8f9fa; border-radius: 8px;")
+            self.scanned_files = []
+            self.reset_scan_ui() # Use the new reset method
+            self.backup_button.setEnabled(False)
+            self.scan_button.setEnabled(False)  # Disable scan button
+            self.status_label.setText(self.lang.get_text('device_removed_status', removed_device_id)) # New lang string
+            self.current_sd_drive = None
+            self.drive_selector.set_sd_card_drive(None)
+            self.drive_selector.show_all_drives()
+        else:
+            # Another device might still be connected, or this was not the active one.
+            # UI might not need a full reset if another device is auto-selected or user selects another.
+            # For now, we assume if a device is removed, and it wasn't the active one, the UI
+            # for the active one (if any) remains. The sd_status_label might need an update
+            # if the list of available devices changes.
+            print(f"Device {removed_device_id} removed, but it was not the active source or other sources exist.")
+            # Potentially refresh sd_status_label if no device is active now
+            if not self.current_sd_drive and not self.sd_detector.current_sd_drives:
+                 self.sd_status_label.setText(self.lang.get_text('searching_sd'))
+
+
     def start_scan(self):
-        """Start file scan"""
-        if not hasattr(self, 'current_sd_drive') or not self.current_sd_drive:
-            QMessageBox.warning(self, self.lang.get_text('warning_title'), 
-                              self.lang.get_text('insert_sd_first'))
+        """Start scanning the selected source device"""
+        if not self.current_sd_drive:
+            print("No source device selected")
             return
+            
+        source_id_to_scan = self.current_sd_drive['id']
+        print(f"Starting scan for source: {source_id_to_scan}")
         
-        self.photo_result.show()
-        self.video_result.show()
-        self.raw_result.show()
-        self.total_result.show()
+        # Clear cache to ensure fresh scan results
+        self.file_scanner.clear_cache(source_id_to_scan)
+        print(f"Cleared cache for: {source_id_to_scan}")
         
-        self.status_label.setText(self.lang.get_text('scanning'))
-        
-        self.file_scanner.scan_directory(self.current_sd_drive)
+        self.file_scanner.start_scan(source_id_to_scan)  # Updated method name
+    
+    def manual_scan(self):
+        """Manually trigger scan for MTP device"""
+        print("=== MANUAL SCAN TRIGGERED ===")
+        if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
+            device_id = self.current_sd_drive.get('id')
+            device_name = self.current_sd_drive.get('name', 'Unknown Device')
+            print(f"Manual scan for device: {device_name} (ID: {device_id})")
+            
+            # Reset scan UI first
+            self.reset_scan_ui()
+            
+            # Show scanning status
+            self.status_label.setText(f"Manually scanning {device_name}...")
+            
+            # Trigger scan
+            self.file_scanner.start_scan(device_id)
+        else:
+            print("No current device available for manual scan")
     
     def on_scan_completed(self, result):
         """Handle scan completion"""
-        if 'error' in result:
-            self.status_label.setText(f"Scan error: {result['error']}")
+        device_name_for_status = "the device"
+        if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
+            device_name_for_status = self.current_sd_drive.get('name', 'the device')
+
+        if 'error' in result and result['error']:
+            error_msg = result['error']
+            self.status_label.setText(self.lang.get_text('scan_error_status', device_name_for_status, error_msg))
+            QMessageBox.warning(self, self.lang.get_text('scan_error_title'),
+                                self.lang.get_text('scan_error_message', error_msg))
+            self.reset_scan_ui()
             return
             
-        self.scanned_files = result['files']
-        self.status_label.setText(self.lang.get_text('scan_complete'))
+        self.scanned_files = result.get('files', [])
+        if not self.scanned_files:
+            self.status_label.setText(self.lang.get_text('no_media_found_on_device_status', device_name_for_status))
+            self.reset_scan_ui()
+            # Optionally, inform user more directly if no files found, e.g.:
+            # QMessageBox.information(self, self.lang.get_text('scan_complete_title'), self.lang.get_text('no_media_found_message', device_name_for_status))
+            return
+
+        self.status_label.setText(self.lang.get_text('scan_complete_on_device_status', device_name_for_status))
         self.backup_button.setEnabled(True)
         
-        photo_count = result['photos']
-        video_count = result['videos']
-        raw_count = result['raw_files']
-        total_size = result['total_size_gb']
+        photo_count = result.get('photos', 0)
+        video_count = result.get('videos', 0) # Assuming these keys exist if no error
+        raw_count = result.get('raw_files', 0)
+        total_size = result.get('total_size_gb', 0)
         
         self.last_scan_result_size = total_size
         
@@ -471,8 +566,97 @@ class MainWindow(QMainWindow):
         self.raw_result.setText(self.lang.get_text('raw_files', raw_count))
         self.total_result.setText(self.lang.get_text('total_size', f"{round(total_size)} GB"))
         
-        # Store required space but don't filter drives automatically
         self.drive_selector.required_space_gb = total_size
+
+    def reset_scan_ui(self):
+        """Resets the scan related UI elements to initial state."""
+        self.scanned_files = []
+        self.photo_result.setText(self.lang.get_text('photos', 0))
+        self.video_result.setText(self.lang.get_text('videos', 0))
+        self.raw_result.setText(self.lang.get_text('raw_files', 0))
+        self.total_result.setText(self.lang.get_text('total_size', 0))
+        self.backup_button.setEnabled(False)
+        # self.status_label is typically set by the caller after reset_scan_ui
+        self.progress_bar.setValue(0)
+        self.current_file_label.setText("")
+    
+    def _prepare_files_for_backup(self, files_list, destination_base):
+        """Prepare files for backup by setting destination paths"""
+        prepared_files = []
+        
+        for file_info in files_list:
+            # Create a copy of the file info
+            prepared_file = file_info.copy()
+            
+            # Get file details
+            creation_date = file_info.get('creation_date')
+            if creation_date is None:
+                creation_date = datetime.now()
+                print(f"Warning: No creation date found for {file_info.get('name', 'unknown')}, using current date")
+            
+            file_type = file_info.get('type', 'unknown')
+            file_name = file_info.get('name', 'unknown_file')
+            
+            # Determine folder structure based on file type and date
+            year_str = creation_date.strftime('%Y')
+            month_str = creation_date.strftime('%m')
+            day_str = creation_date.strftime('%d')
+            
+            # Create type-specific folder
+            if file_type == 'photo' or file_type == 'camera':
+                type_folder = f"Photos_{year_str}"
+            elif file_type == 'video':
+                type_folder = f"Videos_{year_str}"
+            elif file_type == 'raw':
+                type_folder = f"Raw_{year_str}"
+            else:
+                type_folder = f"Other_{year_str}"
+            
+            # Build the full destination path
+            destination_dir = os.path.join(destination_base, type_folder, month_str, day_str)
+            destination_file = os.path.join(destination_dir, file_name)
+            
+            # Set the destination and source paths
+            prepared_file['destination'] = destination_file
+            if file_info.get('is_mtp', False):
+                # For MTP files, the source is the file info itself (contains COM object)
+                prepared_file['source'] = file_info.get('path', '')
+            else:
+                # For filesystem files, use the path directly
+                prepared_file['source'] = file_info.get('path', '')
+            
+            prepared_files.append(prepared_file)
+            
+        return prepared_files
+    
+    def _find_actual_backup_folder(self, destination_base):
+        """Find the actual backup folder that was created"""
+        try:
+            from datetime import datetime
+            import glob
+            
+            # Look for folders created today with pattern like Photos_2025, Raw_2025, Videos_2025
+            current_year = datetime.now().strftime('%Y')
+            possible_patterns = [
+                f"Photos_{current_year}",
+                f"Raw_{current_year}",
+                f"Videos_{current_year}",
+                f"Other_{current_year}"
+            ]
+            
+            for pattern in possible_patterns:
+                folder_path = os.path.join(destination_base, pattern)
+                if os.path.exists(folder_path):
+                    print(f"Found backup folder: {folder_path}")
+                    return folder_path
+            
+            # If no specific folder found, return the base destination
+            print(f"No specific backup folder found, returning base: {destination_base}")
+            return destination_base
+            
+        except Exception as e:
+            print(f"Error finding actual backup folder: {e}")
+            return destination_base
     
     def start_backup(self):
         """Start backup"""
@@ -526,7 +710,10 @@ class MainWindow(QMainWindow):
             self.backup_button.setText(self.lang.get_text('backing_up'))
             self.progress_bar.setValue(0)
             
-            self.backup_worker = BackupWorker(self.scanned_files, destination_path)
+            # Prepare files with destination paths
+            prepared_files = self._prepare_files_for_backup(self.scanned_files, destination_path)
+            
+            self.backup_worker = BackupWorker(prepared_files, destination_path)
             self.backup_worker.progress_updated.connect(self.on_backup_progress)
             self.backup_worker.file_copying.connect(self.on_file_copying)
             self.backup_worker.file_skipping.connect(self.on_file_skipping)
@@ -554,152 +741,109 @@ class MainWindow(QMainWindow):
     
     def on_backup_completed(self, copied_count, skipped_count, destination_path):
         """Backup complete"""
-        self.backup_button.setEnabled(True)
+        self.backup_button.setEnabled(True) # Re-enable backup button for another operation
         self.backup_button.setText(self.lang.get_text('start_backup'))
         self.progress_bar.setValue(100)
-        self.current_file_label.setText("")
+        self.current_file_label.setText("") # Clear current file label
         
         total_processed = copied_count + skipped_count
         if skipped_count > 0:
-            self.status_label.setText(f"備份完成！已複製 {copied_count} 個檔案，跳過 {skipped_count} 個重複檔案")
+            self.status_label.setText(self.lang.get_text('backup_complete_skipped_status', copied_count, skipped_count))
         else:
-            self.status_label.setText(f"備份完成！已複製 {copied_count} 個檔案")
+            self.status_label.setText(self.lang.get_text('backup_complete_status', copied_count))
         
-        self.eject_sd_card()
+        # Find the actual backup folder that was created
+        actual_backup_folder = self._find_actual_backup_folder(destination_path)
         
-        # Create improved completion message
+        # This method now handles MTP vs ejectable drives
+        self.handle_post_backup_device_action()
+        
         if skipped_count > 0:
-            completion_message = f"備份任務已完成！\n\n已成功複製 {copied_count} 個新檔案\n跳過 {skipped_count} 個已存在的重複檔案\n總計處理 {total_processed} 個檔案\n\n目標位置: {destination_path}"
+            completion_message = self.lang.get_text('backup_summary_skipped_message',
+                                                  copied_count, skipped_count,
+                                                  total_processed, actual_backup_folder)
         else:
-            completion_message = f"備份任務已完成！\n\n已成功複製 {copied_count} 個檔案\n\n目標位置: {destination_path}"
+            completion_message = self.lang.get_text('backup_summary_message',
+                                                  copied_count, actual_backup_folder)
         
         self.show_custom_completion_dialog(
-            "✅ 備份完成",
+            self.lang.get_text('backup_complete_title'), # Should be a generic "Backup Complete" title
             completion_message,
-            destination_path
+            actual_backup_folder
         )
     
-    def eject_sd_card(self):
-        """Eject SD card"""
-        if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
+    def handle_post_backup_device_action(self):
+        """Handle actions after backup, like ejecting SD card or notifying MTP disconnect."""
+        current_device_info = getattr(self, 'current_sd_drive', None)
+        if not current_device_info:
+            return
+
+        device_type = current_device_info.get('type')
+        device_name = current_device_info.get('name', 'Device')
+        device_path = current_device_info.get('path') # This is the drive letter for ejectable drives
+
+        if device_type == "MTP":
+            self.show_custom_info_dialog(
+                self.lang.get_text('mtp_backup_complete_title'),
+                self.lang.get_text('mtp_can_disconnect_message', device_name)
+            )
+        elif device_type in ["DRIVE_REMOVABLE", "DRIVE_FIXED_SD"] and device_path:
             try:
                 import win32file
-                import win32api
-                import win32con
-                
-                # Get the drive letter without the colon
-                drive_letter = self.current_sd_drive[0]
-                
-                # Create a handle to the drive
-                handle = win32file.CreateFile(
-                    f"\\\\.\\{drive_letter}:",
-                    win32con.GENERIC_READ,
-                    win32con.FILE_SHARE_READ | win32con.FILE_SHARE_WRITE,
-                    None,
-                    win32con.OPEN_EXISTING,
-                    0,
-                    None
-                )
-                
-                # Define the IOCTL constant for ejecting media
+                GENERIC_READ = 0x80000000
+                FILE_SHARE_READ = 0x00000001
+                FILE_SHARE_WRITE = 0x00000002
+                OPEN_EXISTING = 3
                 IOCTL_STORAGE_EJECT_MEDIA = 0x2D4808
                 
-                # Eject the media
-                win32file.DeviceIoControl(
-                    handle,
-                    IOCTL_STORAGE_EJECT_MEDIA,
-                    None,
-                    0,
-                    None
-                )
+                wp_path = f"\\\\.\\{device_path[0]}:"
                 
-                # Close the handle
+                handle = win32file.CreateFile(
+                    wp_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    None, OPEN_EXISTING, 0, None
+                )
+                win32file.DeviceIoControl(handle, IOCTL_STORAGE_EJECT_MEDIA, None, 0, None)
                 win32file.CloseHandle(handle)
                 
-                # Use custom dialog
                 dialog = QDialog(self)
-                dialog.setFixedSize(600, 250)
-                dialog.setModal(True)
+                dialog.setFixedSize(600, 250); dialog.setModal(True)
                 dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-                
-                # Set dialog style
-                dialog.setStyleSheet("""
-                    QDialog {
-                        background-color: #ffffff;
-                        border: 2px solid #27ae60;
-                        border-radius: 15px;
-                    }
-                    QLabel {
-                        color: #2c3e50;
-                    }
-                    QPushButton {
-                        min-width: 120px;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        font-weight: bold;
-                        font-size: 14px;
-                    }
-                """)
+                dialog.setStyleSheet(self.get_dialog_style("#27ae60"))
                 
                 layout = QVBoxLayout(dialog)
-                layout.setSpacing(25)
-                layout.setContentsMargins(40, 40, 40, 40)
+                layout.setSpacing(25); layout.setContentsMargins(40, 40, 40, 40)
                 
-                # Title label
-                title_label = QLabel("✅ SD卡已安全退出")
+                title_label = QLabel(self.lang.get_text('device_ejected_title', device_name))
                 title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
                 title_label.setAlignment(Qt.AlignCenter)
                 title_label.setStyleSheet("color: #27ae60; margin-bottom: 15px;")
                 layout.addWidget(title_label)
                 
-                # Message label
-                message_label = QLabel("您現在可以安全地移除SD卡。")
+                message_label = QLabel(self.lang.get_text('can_remove_device_message', device_name))
                 message_label.setFont(QFont("Microsoft JhengHei", 14))
                 message_label.setAlignment(Qt.AlignCenter)
                 message_label.setStyleSheet("color: #34495e; margin-bottom: 25px;")
                 message_label.setWordWrap(True)
                 layout.addWidget(message_label)
                 
-                # Button container
-                button_layout = QHBoxLayout()
-                button_layout.setSpacing(20)
-                button_layout.setContentsMargins(0, 10, 0, 0)
-                
-                # OK button
-                ok_button = QPushButton("確定")
-                ok_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-                ok_button.setMinimumHeight(50)
-                ok_button.setStyleSheet("""
-                    QPushButton {
-                        background-color: #27ae60;
-                        color: white;
-                        border: none;
-                    }
-                    QPushButton:hover {
-                        background-color: #2ecc71;
-                    }
-                    QPushButton:pressed {
-                        background-color: #1e8449;
-                    }
-                """)
+                ok_button = QPushButton(self.lang.get_text('ok'))
+                self.style_dialog_button(ok_button, "#27ae60", "#2ecc71", "#1e8449")
                 ok_button.clicked.connect(dialog.accept)
                 
-                # Button container
-                button_layout.addStretch()
-                button_layout.addWidget(ok_button)
-                button_layout.addStretch()
-                
+                button_layout = QHBoxLayout()
+                button_layout.addStretch(); button_layout.addWidget(ok_button); button_layout.addStretch()
                 layout.addLayout(button_layout)
-                
                 dialog.exec_()
                 
             except Exception as e:
-                # Use custom error dialog
+                print(f"Error ejecting drive {device_path}: {e}")
                 self.show_custom_error_dialog(
-                    "⚠️ 無法自動退出SD卡",
-                    f"請手動移除SD卡：\n{str(e)}"
+                    self.lang.get_text('eject_failed_title', device_name),
+                    self.lang.get_text('eject_failed_message', device_name, str(e))
                 )
-    
+        else:
+            print(f"Post-backup: Device type '{device_type}' not ejectable or path missing for {device_name}.")
+
     def on_drive_disconnected(self, error_type, copied_count, total_files):
         """Handle drive disconnection error"""
         self.backup_button.setEnabled(True)
@@ -719,34 +863,54 @@ class MainWindow(QMainWindow):
         
         self.show_custom_error_dialog(self.lang.get_text('error_title'), error_message)
     
+    def get_dialog_style(self, border_color="#3498db"):
+        """Returns a standard stylesheet string for custom dialogs."""
+        return f"""
+            QDialog {{
+                background-color: #ffffff;
+                border: 2px solid {border_color};
+                border-radius: 15px;
+            }}
+            QLabel {{
+                color: #2c3e50;
+            }}
+            QPushButton {{
+                min-width: 120px;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 14px;
+            }}
+        """
+
+    def style_dialog_button(self, button: QPushButton, bg_color, hover_color, pressed_color):
+        """Applies consistent styling to a dialog button."""
+        button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
+        button.setMinimumHeight(50)
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {bg_color};
+                color: white;
+                border: none;
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color};
+            }}
+            QPushButton:pressed {{
+                background-color: {pressed_color};
+            }}
+        """)
+
     def show_custom_confirmation_dialog(self, title, message):
         """Show custom styled confirmation dialog"""
         dialog = QDialog(self)
         dialog.setFixedSize(600, 250)
         dialog.setModal(True)
         dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #ffffff;
-                border: 2px solid #3498db;
-                border-radius: 15px;
-            }
-            QLabel {
-                color: #2c3e50;
-            }
-            QPushButton {
-                min-width: 120px;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-        """)
+        dialog.setStyleSheet(self.get_dialog_style("#3498db")) # Blue border for confirmation
         
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(25)
-        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(25); layout.setContentsMargins(40, 40, 40, 40)
         
         title_label = QLabel(title)
         title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
@@ -762,79 +926,31 @@ class MainWindow(QMainWindow):
         layout.addWidget(message_label)
         
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(20)
-        button_layout.setContentsMargins(0, 10, 0, 0)
+        button_layout.setSpacing(20); button_layout.setContentsMargins(0, 10, 0, 0)
         
         cancel_button = QPushButton(self.lang.get_text('cancel'))
-        cancel_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        cancel_button.setMinimumHeight(50)
-        cancel_button.setStyleSheet("""
-            QPushButton {
-                background-color: #95a5a6;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #7f8c8d;
-            }
-            QPushButton:pressed {
-                background-color: #6c757d;
-            }
-        """)
+        self.style_dialog_button(cancel_button, "#95a5a6", "#7f8c8d", "#6c757d") # Grey
         cancel_button.clicked.connect(dialog.reject)
         button_layout.addWidget(cancel_button)
         
         confirm_button = QPushButton(self.lang.get_text('confirm'))
-        confirm_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        confirm_button.setMinimumHeight(50)
-        confirm_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #2ecc71;
-            }
-            QPushButton:pressed {
-                background-color: #1e8449;
-            }
-        """)
+        self.style_dialog_button(confirm_button, "#27ae60", "#2ecc71", "#1e8449") # Green
         confirm_button.clicked.connect(dialog.accept)
         button_layout.addWidget(confirm_button)
         
         layout.addLayout(button_layout)
-        
         return dialog.exec_() == QDialog.Accepted
 
     def show_custom_completion_dialog(self, title, message, destination_path):
         """Show custom styled completion dialog"""
         dialog = QDialog(self)
-        dialog.setFixedSize(700, 300)
+        dialog.setFixedSize(700, 300) # Adjusted size for potentially longer messages
         dialog.setModal(True)
         dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #ffffff;
-                border: 2px solid #27ae60;
-                border-radius: 15px;
-            }
-            QLabel {
-                color: #2c3e50;
-            }
-            QPushButton {
-                min-width: 120px;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-        """)
+        dialog.setStyleSheet(self.get_dialog_style("#27ae60")) # Green border for completion
         
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(25)
-        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(25); layout.setContentsMargins(40, 40, 40, 40)
         
         title_label = QLabel(title)
         title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
@@ -844,58 +960,33 @@ class MainWindow(QMainWindow):
         
         message_label = QLabel(message)
         message_label.setFont(QFont("Microsoft JhengHei", 14))
-        message_label.setAlignment(Qt.AlignCenter)
+        message_label.setAlignment(Qt.AlignCenter) # Keep centered for general message
         message_label.setStyleSheet("color: #34495e; margin-bottom: 25px;")
         message_label.setWordWrap(True)
         layout.addWidget(message_label)
         
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(20)
-        button_layout.setContentsMargins(0, 10, 0, 0)
+        button_layout.setSpacing(20); button_layout.setContentsMargins(0, 10, 0, 0)
         
         open_folder_button = QPushButton(self.lang.get_text('open_folder'))
-        open_folder_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        open_folder_button.setMinimumHeight(50)
-        open_folder_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #1f5582;
-            }
-        """)
+        self.style_dialog_button(open_folder_button, "#3498db", "#2980b9", "#1f5582") # Blue
         def open_folder():
-            os.startfile(destination_path)
+            try:
+                os.startfile(destination_path)
+            except Exception as e:
+                print(f"Error opening folder {destination_path}: {e}")
+                # Optionally show a small error to user if os.startfile fails
+                QMessageBox.warning(self, "Error", f"Could not open folder: {destination_path}")
             dialog.accept()
         open_folder_button.clicked.connect(open_folder)
         button_layout.addWidget(open_folder_button)
         
         ok_button = QPushButton(self.lang.get_text('ok'))
-        ok_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        ok_button.setMinimumHeight(50)
-        ok_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #2ecc71;
-            }
-            QPushButton:pressed {
-                background-color: #1e8449;
-            }
-        """)
+        self.style_dialog_button(ok_button, "#27ae60", "#2ecc71", "#1e8449") # Green
         ok_button.clicked.connect(dialog.accept)
         button_layout.addWidget(ok_button)
         
         layout.addLayout(button_layout)
-        
         dialog.exec_()
 
     def show_custom_error_dialog(self, title, message):
@@ -904,28 +995,10 @@ class MainWindow(QMainWindow):
         dialog.setFixedSize(600, 250)
         dialog.setModal(True)
         dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #ffffff;
-                border: 2px solid #e74c3c;
-                border-radius: 15px;
-            }
-            QLabel {
-                color: #2c3e50;
-            }
-            QPushButton {
-                min-width: 120px;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-        """)
+        dialog.setStyleSheet(self.get_dialog_style("#e74c3c")) # Red border for error
         
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(25)
-        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(25); layout.setContentsMargins(40, 40, 40, 40)
         
         title_label = QLabel(title)
         title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
@@ -940,64 +1013,59 @@ class MainWindow(QMainWindow):
         message_label.setWordWrap(True)
         layout.addWidget(message_label)
         
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(20)
-        button_layout.setContentsMargins(0, 10, 0, 0)
-        
         ok_button = QPushButton(self.lang.get_text('ok'))
-        ok_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        ok_button.setMinimumHeight(50)
-        ok_button.setStyleSheet("""
-            QPushButton {
-                background-color: #e74c3c;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #c0392b;
-            }
-            QPushButton:pressed {
-                background-color: #a93226;
-            }
-        """)
+        self.style_dialog_button(ok_button, "#e74c3c", "#c0392b", "#a93226") # Red
         ok_button.clicked.connect(dialog.accept)
         
-        button_layout.addStretch()
-        button_layout.addWidget(ok_button)
-        button_layout.addStretch()
-        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch(); button_layout.addWidget(ok_button); button_layout.addStretch()
         layout.addLayout(button_layout)
-        
         dialog.exec_()
+
+    def show_custom_info_dialog(self, title, message):
+        """Show custom styled informational dialog (similar to error but with info styling)."""
+        dialog = QDialog(self)
+        dialog.setFixedSize(600, 250)
+        dialog.setModal(True)
+        dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        dialog.setStyleSheet(self.get_dialog_style("#3498db")) # Blue border for info
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(25); layout.setContentsMargins(40, 40, 40, 40)
+        
+        title_label = QLabel(title)
+        title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("color: #2980b9; margin-bottom: 15px;") # Blue title
+        layout.addWidget(title_label)
+        
+        message_label = QLabel(message)
+        message_label.setFont(QFont("Microsoft JhengHei", 14))
+        message_label.setAlignment(Qt.AlignCenter)
+        message_label.setStyleSheet("color: #34495e; margin-bottom: 25px;")
+        message_label.setWordWrap(True)
+        layout.addWidget(message_label)
+        
+        ok_button = QPushButton(self.lang.get_text('ok'))
+        self.style_dialog_button(ok_button, "#3498db", "#2980b9", "#1f5582") # Blue
+        ok_button.clicked.connect(dialog.accept)
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch(); button_layout.addWidget(ok_button); button_layout.addStretch()
+        layout.addLayout(button_layout)
+        dialog.exec_()
+
 
     def show_drive_disconnection_dialog(self, error_type, copied_count, total_files, remaining_files):
         """Show drive disconnection dialog"""
         dialog = QDialog(self)
-        dialog.setFixedSize(800, 400)
+        dialog.setFixedSize(800, 400) # Kept larger size for this detailed message
         dialog.setModal(True)
         dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #ffffff;
-                border: 2px solid #f39c12;
-                border-radius: 15px;
-            }
-            QLabel {
-                color: #2c3e50;
-            }
-            QPushButton {
-                min-width: 120px;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-        """)
+        dialog.setStyleSheet(self.get_dialog_style("#f39c12")) # Orange border for warning/disconnection
         
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(25)
-        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(25); layout.setContentsMargins(40, 40, 40, 40)
         
         title_label = QLabel(self.lang.get_text('drive_disconnected'))
         title_label.setFont(QFont("Microsoft JhengHei", 18, QFont.Bold))
@@ -1012,64 +1080,37 @@ class MainWindow(QMainWindow):
                                    copied_count,
                                    total_files,
                                    progress_percentage,
-                                   copied_count,
+                                   copied_count, # This seems redundant with the other copied_count
                                    remaining_files)
         
         message_label = QLabel(message)
         message_label.setFont(QFont("Microsoft JhengHei", 12))
-        message_label.setAlignment(Qt.AlignLeft)
+        message_label.setAlignment(Qt.AlignLeft) # Align left for better readability of multi-line info
         message_label.setStyleSheet("color: #34495e; margin-bottom: 25px; line-height: 1.6;")
         message_label.setWordWrap(True)
         layout.addWidget(message_label)
         
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(20)
-        button_layout.setContentsMargins(0, 10, 0, 0)
+        button_layout.setSpacing(20); button_layout.setContentsMargins(0, 10, 0, 0)
         
         restart_button = QPushButton(self.lang.get_text('restart'))
-        restart_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        restart_button.setMinimumHeight(50)
-        restart_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #2ecc71;
-            }
-            QPushButton:pressed {
-                background-color: #1e8449;
-            }
-        """)
+        self.style_dialog_button(restart_button, "#27ae60", "#2ecc71", "#1e8449") # Green for restart
         def restart_backup():
             dialog.accept()
+            # Re-trigger scan if a source device was active, assuming it might be reconnected
             if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
-                self.start_scan()
+                self.on_sd_card_detected(self.current_sd_drive) # Re-process the current device
+            else: # Or if no device was active, just refresh general state
+                self.refresh_drives()
         restart_button.clicked.connect(restart_backup)
         button_layout.addWidget(restart_button)
         
-        ok_button = QPushButton(self.lang.get_text('handle_later'))
-        ok_button.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        ok_button.setMinimumHeight(50)
-        ok_button.setStyleSheet("""
-            QPushButton {
-                background-color: #95a5a6;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #7f8c8d;
-            }
-            QPushButton:pressed {
-                background-color: #6c757d;
-            }
-        """)
-        ok_button.clicked.connect(dialog.accept)
-        button_layout.addWidget(ok_button)
+        handle_later_button = QPushButton(self.lang.get_text('handle_later')) # Renamed from 'ok_button'
+        self.style_dialog_button(handle_later_button, "#95a5a6", "#7f8c8d", "#6c757d") # Grey
+        handle_later_button.clicked.connect(dialog.accept)
+        button_layout.addWidget(handle_later_button)
         
         layout.addLayout(button_layout)
-        
         dialog.exec_()
 
     def closeEvent(self, event):
