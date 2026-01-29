@@ -23,6 +23,7 @@ UI_TEXT = {
     'refresh': '重新整理',  # Refresh
     # 'start_scan': '開始掃描',  # Start Scan (Scanning is automatic on device detection in new UI)
     'start_backup': '開始備份',  # Start Backup
+    'scan_device': '掃描裝置',  # Scan Device
     'backing_up': '備份中...',  # Backing up...
     'select': '選擇',  # Select
     'selected': '已選擇',  # Selected
@@ -30,11 +31,12 @@ UI_TEXT = {
     'cancel': '取消',  # Cancel
     'ok': '確定',  # OK
     'open_folder': '開啟資料夾',  # Open Folder
-    'restart': '重新掃描',  # Restart Scan (Updated from 重新開始)
-    'handle_later': '稍後處理',  # Handle Later
+    'restart': '立即重試',  # Retry Now (Updated from 重新掃描)
+    'handle_later': '稍後再說',  # Dismiss (Updated from 稍後處理)
     
     # Messages (Status messages are now grouped below)
     'searching_sd': '正在搜尋裝置...',  # Searching for device... (Updated from SD卡...)
+    'refreshing_devices': '正在重新整理裝置清單...',  # Refreshing device list...
     # 'sd_detected': '已偵測到SD卡: {}',  # SD card detected: {} (Superseded by device_detected)
     # 'sd_removed': 'SD卡已移除',  # SD card removed (Superseded by device_removed_status)
     # 'scan_complete': '掃描完成',  # Scan complete (Superseded by scan_complete_on_device_status)
@@ -87,7 +89,9 @@ UI_TEXT = {
     # 'backup_error': '備份過程中發生錯誤',  # Error occurred during backup (Generic, error_title is used for dialogs)
     
     # Status messages (Consolidated and reviewed)
-    'device_detected': '偵測到裝置: {}',  # Device Detected: {}
+    'device_detected': '已偵測到裝置: {}',  # Device Detected: {}
+    'device_ready': '已準備好裝置: {name} ({path})', # Device ready: {name} ({path})
+    'device_ready_simple': '已準備好裝置: {name}', # Device ready (Simple): {name}
     'device_removed_status': '裝置 {} 已移除。',  # Device {} has been removed.
     'scanning_device': '正在掃描 {}...',  # Scanning {}...
     'scan_error_status': '掃描 {} 時發生錯誤: {}',  # Scan Error on {}: {}
@@ -113,6 +117,12 @@ UI_TEXT = {
     'device_ejected_title': '✅ {} 已安全退出', # ✅ {} Safely Ejected
     'eject_failed_title': '⚠️ 無法退出 {}', # ⚠️ Could Not Eject {}
     'drive_disconnected_title': '磁碟機已中斷連線', # Drive Disconnected Title from main_window
+    'no_destination_space_title': '⚠️ 沒有足夠空間的磁碟機', # No Drives with Enough Space
+    'no_destination_space_message': '找不到可容納 {:.1f} GB 備份資料的磁碟機。\n請連接其他硬碟或釋放空間後再試。', # No drive found to hold ... GB...
+    'select_source_folder': '選擇來源資料夾', # Select source folder
+    'start_mtp_scan': '開始 MTP 掃描', # Start MTP Scan
+    'mtp_ready': 'MTP 裝置 {} 已就緒', # MTP Device {} ready
+    'select_source': '選擇來源裝置', # Select Source Device
 
     # Dialog Messages (New Section for clarity)
     'backup_summary_message': '備份任務已完成！\n\n已成功複製 {} 個檔案。\n\n目標位置: {}',

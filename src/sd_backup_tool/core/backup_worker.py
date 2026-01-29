@@ -130,8 +130,21 @@ class BackupWorker(QThread):
                 dest_dir = os.path.dirname(file_info['destination'])
                 os.makedirs(dest_dir, exist_ok=True)
                 
-                # Copy the file
-                shutil.copy2(file_info['source'], file_info['destination'])
+                # Copy the file using optimized direct copy with large buffer
+                # shutil.copy2 is good but we can ensure optimal buffer size manually if needed.
+                # standard copy2 + copyfileobj uses default buffer (usually 16KB-64KB).
+                # We'll stick to shutil.copy2 for metadata preservation but ensure we use it efficiently.
+                # If performance is critical, we could use a custom copy loop, but shutil.copy2 is generally robust.
+                # However, for this task, let's explicitly use a larger buffer copy implementation
+                # while preserving metadata.
+                
+                with open(file_info['source'], 'rb') as fsrc:
+                    with open(file_info['destination'], 'wb') as fdst:
+                        # 1MB buffer size
+                        shutil.copyfileobj(fsrc, fdst, length=1024*1024)
+                
+                # Copy metadata
+                shutil.copystat(file_info['source'], file_info['destination'])
                 
                 # Verify the copy
                 if os.path.exists(file_info['destination']):

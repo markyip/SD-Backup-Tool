@@ -10,6 +10,9 @@ import shutil
 import subprocess
 import pkg_resources
 
+# Get project root (one level up from build_config)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def check_dependencies():
     """Check and install required dependencies"""
     required = {
@@ -60,8 +63,12 @@ def build_executable():
         '--name=SD_Backup_Tool',
         '--onefile',  # Create single file executable
         '--windowed',
-        '--icon=assets/icon.ico',
-        '--add-data=assets;assets',
+        '--icon=' + os.path.join(PROJECT_ROOT, "assets", "icon.ico"),
+        '--add-data=' + os.path.join(PROJECT_ROOT, "assets") + os.pathsep + "assets",
+        '--add-data=' + os.path.join(PROJECT_ROOT, "src", "sd_backup_tool") + os.pathsep + "sd_backup_tool",
+        '--paths=' + os.path.join(PROJECT_ROOT, "src"),
+        '--collect-all=sd_backup_tool',
+        '--collect-all=win32com',
         '--clean',
         '--noconfirm',  # Replace existing build without asking
         '--hidden-import=PyQt5',
@@ -70,17 +77,23 @@ def build_executable():
         '--hidden-import=PyQt5.QtWidgets',
         '--hidden-import=win32api',
         '--hidden-import=win32file',
+        '--hidden-import=win32com.client',
         '--hidden-import=PIL',
         '--hidden-import=PIL.Image',
         '--hidden-import=PIL.ExifTags',
-        'main.py'
+        os.path.join(PROJECT_ROOT, 'main.py')
     ]
     
     try:
-        # Run build command
-        subprocess.run(build_cmd, check=True)
+        # Prepare environment
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.join(PROJECT_ROOT, "src") + os.pathsep + env.get("PYTHONPATH", "")
+        
+        # Run build command from project root
+        print(f"Executing build command in {PROJECT_ROOT}...")
+        subprocess.run(build_cmd, check=True, cwd=PROJECT_ROOT, env=env)
         print("SD Backup Tool built successfully!")
-        print("Executable location: dist/SD_Backup_Tool.exe")
+        print(f"Executable location: {os.path.join(PROJECT_ROOT, 'dist', 'SD_Backup_Tool.exe')}")
         
         # Clean up build folders and spec file
         cleanup_build_folders()

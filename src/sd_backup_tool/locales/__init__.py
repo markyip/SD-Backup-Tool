@@ -22,12 +22,12 @@ class LanguageManager:
         self.current_lang = DEFAULT_LANG
         self.texts = LANGUAGES[self.current_lang]
     
-    def get_text(self, key, *args):
+    def get_text(self, key, *args, **kwargs):
         """Get text for the given key with optional formatting"""
         try:
             text = self.texts.get(key, key)
-            if args:
-                return text.format(*args)
+            if args or kwargs:
+                return text.format(*args, **kwargs)
             return text
         except Exception as e:
             print(f"Error formatting text for key '{key}': {e}")

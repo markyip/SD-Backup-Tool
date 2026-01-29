@@ -12,15 +12,15 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QProgressBar, QGroupBox, QGridLayout,
-    QSizePolicy, QMessageBox, QFileDialog, QScrollArea, QDialog
+    QSizePolicy, QMessageBox, QFileDialog, QScrollArea, QDialog, QFrame, QComboBox
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QSettings
 from PyQt5.QtGui import QFont, QIcon
-from core.sd_detector_fixed import SDCardDetector
-from core.file_scanner import FileScanner
-from core.backup_worker import BackupWorker
-from ui.drive_tile_widget import DriveSelectionWidget
-from locales import LanguageManager
+from ..core.sd_detector_fixed import SDCardDetector
+from ..core.file_scanner import FileScanner
+from ..core.backup_worker import BackupWorker
+from .drive_tile_widget import DriveSelectionWidget
+from ..locales import LanguageManager
 import shutil
 
 class MainWindow(QMainWindow):
@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         self.lang = LanguageManager()
         
         # Set application icon
-        icon_path_source = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'icon.ico')
+        icon_path_source = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'assets', 'icon.ico')
         icon_path_bundled = os.path.join(getattr(sys, '_MEIPASS', '.'), 'assets', 'icon.ico')
 
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
@@ -68,26 +68,26 @@ class MainWindow(QMainWindow):
         font = QFont("Microsoft JhengHei", 12)
         self.setFont(font)
         
-        # Create main window
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        layout = QVBoxLayout(main_widget)
+        # Create central layout inside a scroll area to handle vertical resizing
+        main_scroll = QScrollArea()
+        main_scroll.setWidgetResizable(True)
+        main_scroll.setFrameShape(QFrame.NoFrame)
+        self.setCentralWidget(main_scroll)
+        
+        scroll_content = QWidget()
+        main_scroll.setWidget(scroll_content)
+        
+        layout = QVBoxLayout(scroll_content)
         layout.setSpacing(20)
         layout.setContentsMargins(30, 30, 30, 30)
-        
-        # Title
-        title_label = QLabel("📱 " + self.lang.get_text('window_title') + " - 檔案備份")
-        title_font = QFont("Microsoft JhengHei", 24, QFont.Bold)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("color: #2c3e50; margin: 20px;")
-        layout.addWidget(title_label)
         
         # SD card status area
         self.create_sd_status_group(layout)
         
         # Destination selection area
         self.create_destination_group_enhanced(layout)
+        # Give destination group priority for vertical space
+        layout.setStretch(1, 1) 
         
         # File scan area
         self.create_scan_group(layout)
@@ -109,7 +109,6 @@ class MainWindow(QMainWindow):
         
         group = QGroupBox(self.lang.get_text('sd_card_status'))
         group.setFont(QFont("Microsoft JhengHei", 14, QFont.Bold))
-        group.setMaximumWidth(600)
         group_layout = QVBoxLayout()
         
         status_layout = QHBoxLayout()
@@ -133,7 +132,7 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.refresh_button)
         
         # Add manual scan button for MTP devices
-        self.scan_button = QPushButton("Scan Device")
+        self.scan_button = QPushButton(self.lang.get_text('scan_device'))
         self.scan_button.setFont(QFont("Microsoft JhengHei", 12))
         self.scan_button.setStyleSheet("""
             QPushButton {
@@ -153,8 +152,24 @@ class MainWindow(QMainWindow):
             }
         """)
         self.scan_button.clicked.connect(self.manual_scan)
-        self.scan_button.setEnabled(False)
+        self.scan_button.setEnabled(True)
         status_layout.addWidget(self.scan_button)
+        
+        # Add source selector dropdown (hidden by default)
+        self.source_selector = QComboBox()
+        self.source_selector.setFont(QFont("Microsoft JhengHei", 12))
+        self.source_selector.setStyleSheet("""
+            QComboBox {
+                padding: 10px;
+                border: 2px solid #3498db;
+                border-radius: 6px;
+                background: white;
+                min-width: 200px;
+            }
+        """)
+        self.source_selector.currentIndexChanged.connect(self.on_source_changed)
+        self.source_selector.setVisible(False)
+        status_layout.addWidget(self.source_selector)
         
         self.sd_status_label = QLabel(self.lang.get_text('searching_sd'))
         self.sd_status_label.setFont(QFont("Microsoft JhengHei", 13))
@@ -354,9 +369,17 @@ class MainWindow(QMainWindow):
             self.settings.setValue('last_destination', selected_drive)
     
     def refresh_drives(self):
-        """Refresh the list of available drives"""
+        """Manually refresh both Source and Destination drives"""
         try:
-            self.sd_detector.check_drives()  # Use check_drives instead of force_refresh
+            print("Refreshing all drives (Source & Destination)...")
+            self.update_destination_drives()
+            
+            # Trigger a re-check in the background detector
+            if hasattr(self, 'sd_detector'):
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(0, self.sd_detector.check_drives)
+                
+            self.status_label.setText(self.lang.get_text('refreshing_devices'))
         except Exception as e:
             print(f"Error refreshing drives: {e}")
     
@@ -387,18 +410,20 @@ class MainWindow(QMainWindow):
                         free_gb = free / (1024**3)
                         used_gb = used / (1024**3)
                         
-                        # Only show drives with at least 10GB free
-                        if free >= 10 * (1024**3):  # 10GB in bytes
-                            drives_info[drive] = {
-                                'drive': drive,
-                                'name': '',  # Default empty name
-                                'total_gb': total_gb,
-                                'free_gb': free_gb,
-                                'used_gb': used_gb
-                            }
-                            print(f"Added drive {drive} to list (Free space: {free_gb:.1f}GB)")
-                        else:
-                            print(f"Drive {drive} has insufficient space (Free space: {free_gb:.1f}GB)")
+                        # Skip if this is the current source drive
+                        if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
+                            if drive.upper() == self.current_sd_drive.get('id', '').upper():
+                                print(f"Skipping drive {drive} as it is the current source")
+                                continue
+
+                        drives_info[drive] = {
+                            'drive': drive,
+                            'name': '',  # Default empty name
+                            'total_gb': total_gb,
+                            'free_gb': free_gb,
+                            'used_gb': used_gb
+                        }
+                        print(f"Added drive {drive} to list (Free space: {free_gb:.1f}GB)")
                     else:
                         print(f"Drive {drive} is not a fixed drive")
                         
@@ -422,7 +447,7 @@ class MainWindow(QMainWindow):
     def on_drive_selected(self, drive_path):
         """Handle drive selection event"""
         self.save_settings()
-        self.status_label.setText(f"Destination selected: {drive_path}")
+        self.status_label.setText(self.lang.get_text('destination_selected', drive_path))
         self._update_smart_scanning()
     
     def _update_smart_scanning(self):
@@ -443,55 +468,136 @@ class MainWindow(QMainWindow):
                     print("Smart scanning not available - using regular scanning")
     
     def on_sd_card_detected(self, device_info: dict):
-        """Handle SD card/MTP device detection.
-        device_info: {'id': str, 'name': str, 'type': str, 'path': str}
-        """
-        # Use device_info['name'] for display, device_info['id'] for processing
-        display_name = device_info.get('name', 'Unknown Device')
-        device_id = device_info.get('id') # This is what scanner and backup worker use
+        """Handle SD card/MTP device detection."""
+        # Always update the selector first
+        self._sync_source_selector()
+        
+        # PROACTIVE AUTOMATION: 
+        # Always set the newly detected device as the active source. 
+        # For elderly users, the "Just Plugged In" device should be the immediate focus.
+        print(f"Proactively switching to newly detected device: {device_info.get('name')}")
+        self._set_active_source(device_info)
 
-        self.sd_status_label.setText(self.lang.get_text('device_detected', display_name)) # New lang string
-        self.sd_status_label.setStyleSheet("padding: 15px; background-color: #d5edda; border-radius: 8px; color: #155724;")
-        self.status_label.setText("")
-        self.current_sd_drive = device_info # Store the whole dict
+    def _sync_source_selector(self):
+        """Sync the source selector dropdown with current available devices"""
+        if not hasattr(self, 'source_selector'): return
         
-        # Enable scan button for MTP devices
-        if device_info.get('type') == 'MTP':
-            self.scan_button.setEnabled(True)
+        # Block signals briefly to avoid recursive triggers
+        self.source_selector.blockSignals(True)
+        self.source_selector.clear()
         
-        # Pass the device_id (e.g., "D:\" or "MTP:XYZ") to drive_selector and scanner
+        all_drives = list(self.sd_detector.drives_info.values())
+        
+        # If any manual source exists, add it too
+        if hasattr(self, 'current_sd_drive') and self.current_sd_drive.get('type') == 'Manual':
+            all_drives.append(self.current_sd_drive)
+            
+        if len(all_drives) > 1:
+            self.source_selector.setVisible(True)
+            self.sd_status_label.setVisible(True) # Keep label for details
+            
+            for info in all_drives:
+                 name = info.get('name', info.get('id'))
+                 dtype = info.get('type', 'SD')
+                 self.source_selector.addItem(f"[{dtype}] {name}", info.get('id'))
+                 
+            # Set current index to active source if it matches
+            if self.current_sd_drive:
+                idx = self.source_selector.findData(self.current_sd_drive.get('id'))
+                if idx >= 0:
+                    self.source_selector.setCurrentIndex(idx)
+        else:
+            self.source_selector.setVisible(False)
+            
+        self.source_selector.blockSignals(False)
+
+    def on_source_changed(self, index):
+        """Handle user changing the active source via dropdown"""
+        if index < 0: return
+        
+        device_id = self.source_selector.itemData(index)
+        if not device_id: return
+        
+        # Find info in detector or it might be our manual one
+        info = self.sd_detector.drives_info.get(device_id)
+        if not info and hasattr(self, 'current_sd_drive') and self.current_sd_drive.get('id') == device_id:
+             info = self.current_sd_drive
+             
+        if info:
+            print(f"User switched source to: {device_id}")
+            self._set_active_source(info)
+
+    def _set_active_source(self, device_info: dict):
+        """Actually set the device as the active backup source"""
+        # Ensure we have a valid display name (fallback to ID if name is empty)
+        display_name = device_info.get('name') or device_info.get('id') or 'Unknown Device'
+        device_id = device_info.get('id')
+        device_type = device_info.get('type', 'SD')
+
+        # Create a detailed localized status for the bubble
+        # e.g., "已準備好裝置: Canon (E:\)" or "已準備好裝置: I:\"
+        if display_name == device_id:
+             # Avoid "I:\ (I:\)" duplication
+             bubble_text = f"{self.lang.get_text('device_ready_simple', name=display_name)}"
+             if bubble_text == 'device_ready_simple': # Fallback
+                 bubble_text = f"[{device_type}] {display_name}"
+        else:
+             bubble_text = self.lang.get_text('device_ready', name=display_name, path=device_id)
+             if not bubble_text or bubble_text == 'device_ready':
+                  bubble_text = f"[{device_type}] {display_name} ({device_id})"
+             
+        self.sd_status_label.setText(bubble_text)
+        self.sd_status_label.setStyleSheet("padding: 15px; background-color: #d5edda; border-radius: 8px; color: #155724; font-weight: bold;")
+        
+        self.status_label.setText(bubble_text)
+        self.current_sd_drive = device_info
+        
+        # UI controls and text
+        if device_type == 'MTP':
+            self.scan_button.setText(self.lang.get_text('start_mtp_scan'))
+            self.status_label.setText(self.lang.get_text('mtp_ready', display_name))
+        else:
+            self.scan_button.setText(self.lang.get_text('scan_device'))
+            
+        # Update selector if visible
+        self._sync_source_selector()
+        
+        # Pass to selector and check smart scanning
         self.drive_selector.set_sd_card_drive(device_id)
-        self._update_smart_scanning()  # Check if we can enable smart scanning
-        self.start_scan() # start_scan will use self.current_sd_drive['id']
+        self._update_smart_scanning()
+        
+        # UNIVERSAL AUTO-SCAN:
+        # Automatically trigger scan for ALL device types (SD, MTP, etc.)
+        # to maximize simplicity. The user just plugs it in, and we do the work.
+        print(f"Automatically starting scan for {device_type} device: {display_name}")
+        self.reset_scan_ui()
+        self.start_scan()
     
     def on_sd_card_removed(self, removed_device_id: str):
         """Handle SD card/MTP device removal."""
-        # Check if the removed device is the one currently being processed
-        current_processing_id = None
-        if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
-            current_processing_id = self.current_sd_drive.get('id')
-
-        if current_processing_id == removed_device_id or not self.sd_detector.current_sd_drives:
-            # If the active device was removed, or no devices are left, reset UI
-            self.sd_status_label.setText(self.lang.get_text('searching_sd'))
-            self.sd_status_label.setStyleSheet("padding: 15px; background-color: #f8f9fa; border-radius: 8px;")
-            self.scanned_files = []
-            self.reset_scan_ui() # Use the new reset method
-            self.backup_button.setEnabled(False)
-            self.scan_button.setEnabled(False)  # Disable scan button
-            self.status_label.setText(self.lang.get_text('device_removed_status', removed_device_id)) # New lang string
-            self.current_sd_drive = None
-            self.drive_selector.set_sd_card_drive(None)
-            self.drive_selector.show_all_drives()
+        # Refresh selector first
+        self._sync_source_selector()
+        
+        # Check if the removed device was the active one
+        if hasattr(self, 'current_sd_drive') and self.current_sd_drive and self.current_sd_drive.get('id') == removed_device_id:
+             # Try to pick another device if one exists
+             remaining = list(self.sd_detector.drives_info.values())
+             if remaining:
+                  self._set_active_source(remaining[0])
+             else:
+                  # No devices left, full reset
+                  self.sd_status_label.setText(self.lang.get_text('searching_sd'))
+                  self.sd_status_label.setStyleSheet("padding: 15px; background-color: #f8f9fa; border-radius: 8px;")
+                  self.scanned_files = []
+                  self.reset_scan_ui()
+                  self.backup_button.setEnabled(False)
+                  self.status_label.setText(self.lang.get_text('device_removed_status', removed_device_id))
+                  self.current_sd_drive = None
+                  self.drive_selector.set_sd_card_drive(None)
+                  self.drive_selector.show_all_drives()
         else:
-            # Another device might still be connected, or this was not the active one.
-            # UI might not need a full reset if another device is auto-selected or user selects another.
-            # For now, we assume if a device is removed, and it wasn't the active one, the UI
-            # for the active one (if any) remains. The sd_status_label might need an update
-            # if the list of available devices changes.
-            print(f"Device {removed_device_id} removed, but it was not the active source or other sources exist.")
-            # Potentially refresh sd_status_label if no device is active now
-            if not self.current_sd_drive and not self.sd_detector.current_sd_drives:
+             print(f"Device {removed_device_id} removed, but it was not the active source.")
+             if not self.sd_detector.current_sd_drives:
                  self.sd_status_label.setText(self.lang.get_text('searching_sd'))
 
 
@@ -501,18 +607,21 @@ class MainWindow(QMainWindow):
             print("No source device selected")
             return
             
-        source_id_to_scan = self.current_sd_drive['id']
-        print(f"Starting scan for source: {source_id_to_scan}")
+        source_id = self.current_sd_drive['id']
+        source_name = self.current_sd_drive.get('name', source_id)
+        
+        print(f"Starting scan for source: {source_id}")
+        self.status_label.setText(self.lang.get_text('scanning_device', source_name))
         
         # Clear cache to ensure fresh scan results
-        self.file_scanner.clear_cache(source_id_to_scan)
-        print(f"Cleared cache for: {source_id_to_scan}")
-        
-        self.file_scanner.start_scan(source_id_to_scan)  # Updated method name
+        self.file_scanner.clear_cache(source_id)
+        self.file_scanner.start_scan(source_id)
     
     def manual_scan(self):
-        """Manually trigger scan for MTP device"""
-        print("=== MANUAL SCAN TRIGGERED ===")
+        """Manually select a source folder or trigger scan for current device"""
+        print("=== MANUAL SCAN/SELECT TRIGGERED ===")
+        
+        # If a device is already detected, just scan it
         if hasattr(self, 'current_sd_drive') and self.current_sd_drive:
             device_id = self.current_sd_drive.get('id')
             device_name = self.current_sd_drive.get('name', 'Unknown Device')
@@ -522,12 +631,25 @@ class MainWindow(QMainWindow):
             self.reset_scan_ui()
             
             # Show scanning status
-            self.status_label.setText(f"Manually scanning {device_name}...")
+            self.status_label.setText(self.lang.get_text('scanning_device', device_name))
             
             # Trigger scan
             self.file_scanner.start_scan(device_id)
         else:
-            print("No current device available for manual scan")
+            # Otherwise, let the user pick a folder manually
+            dir_path = QFileDialog.getExistingDirectory(self, self.lang.get_text('select_source_folder'))
+            if dir_path:
+                # Create a virtual device info
+                device_info = {
+                    'id': dir_path,
+                    'name': os.path.basename(dir_path) or dir_path,
+                    'type': 'Manual',
+                    'path': dir_path
+                }
+                print(f"User manually selected source: {dir_path}")
+                self.on_sd_card_detected(device_info)
+                # Auto-start scan for manually selected folder
+                self.start_scan()
     
     def on_scan_completed(self, result):
         """Handle scan completion"""
@@ -566,7 +688,30 @@ class MainWindow(QMainWindow):
         self.raw_result.setText(self.lang.get_text('raw_files', raw_count))
         self.total_result.setText(self.lang.get_text('total_size', f"{round(total_size)} GB"))
         
-        self.drive_selector.required_space_gb = total_size
+        # Filter drives by required space
+        self.drive_selector.filter_drives_by_space(total_size)
+        
+        # Auto-selection logic
+        current_selected = self.drive_selector.get_selected_drive()
+        first_available = self.drive_selector.get_first_available_drive()
+        
+        if current_selected and not self.drive_selector.check_drive_space(current_selected):
+            # Current selection is invalid due to space, try to find another
+            if first_available:
+                print(f"Current drive {current_selected} has insufficient space. Auto-selecting {first_available}")
+                self.drive_selector.set_selected_drive(first_available)
+            else:
+                print(f"Current drive {current_selected} has insufficient space and no other drives available.")
+                QMessageBox.warning(self, self.lang.get_text('no_destination_space_title'),
+                                    self.lang.get_text('no_destination_space_message', total_size))
+        elif not current_selected and first_available:
+            # Nothing selected yet, auto-select first valid one
+            print(f"Auto-selecting first available drive: {first_available}")
+            self.drive_selector.set_selected_drive(first_available)
+        elif not current_selected and not first_available:
+            # Truly no space anywhere
+            QMessageBox.warning(self, self.lang.get_text('no_destination_space_title'),
+                                self.lang.get_text('no_destination_space_message', total_size))
 
     def reset_scan_ui(self):
         """Resets the scan related UI elements to initial state."""
@@ -727,16 +872,16 @@ class MainWindow(QMainWindow):
         if total > 0:
             progress = int((current / total) * 100)
             self.progress_bar.setValue(progress)
-            self.status_label.setText(f"進度: {current}/{total} ({progress}%) - 已複製: {copied}, 已跳過: {skipped}")
+            self.status_label.setText(self.lang.get_text('backup_progress_detailed', current, total, progress, copied, skipped))
     
     def on_file_copying(self, filename):
         """Copying file"""
-        self.current_file_label.setText(f"正在複製: {filename}")
+        self.current_file_label.setText(self.lang.get_text('copying_file', filename))
         self.current_file_label.setStyleSheet("color: #2980b9; padding: 5px; font-weight: bold;")
     
     def on_file_skipping(self, filename):
         """Skipping duplicate file"""
-        self.current_file_label.setText(f"跳過重複檔案: {filename}")
+        self.current_file_label.setText(self.lang.get_text('skipping_file', filename))
         self.current_file_label.setStyleSheet("color: #f39c12; padding: 5px; font-weight: bold;")
     
     def on_backup_completed(self, copied_count, skipped_count, destination_path):
@@ -976,7 +1121,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"Error opening folder {destination_path}: {e}")
                 # Optionally show a small error to user if os.startfile fails
-                QMessageBox.warning(self, "Error", f"Could not open folder: {destination_path}")
+                QMessageBox.warning(self, self.lang.get_text('error_title'), self.lang.get_text('scan_error_message', destination_path))
             dialog.accept()
         open_folder_button.clicked.connect(open_folder)
         button_layout.addWidget(open_folder_button)

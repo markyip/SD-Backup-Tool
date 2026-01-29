@@ -557,52 +557,24 @@ class FileDeduplicator:
     @staticmethod
     def get_file_hash(source_info, chunk_size=8192):
         """
-        Calculate MD5 hash of a file from a filesystem path or MTP object.
-        source_info: A dictionary containing 'path' (filesystem path or MTP identifier string)
-                     and 'source_device_id' (MTP device ID, or None for filesystem).
+        Calculate MD5 hash of a file from a filesystem path.
+        For MTP files, we skip hashing because it's too slow (requires downloading the file).
         """
-        path_or_id_str = source_info['path']
-        mtp_device_id_for_source = source_info.get('source_device_id') # From file_data
+        if source_info.get('is_mtp', False):
+            return None
+            
+        path = source_info.get('path')
+        if not path or not os.path.exists(path):
+            return None
 
         hash_md5 = hashlib.md5()
         try:
-            if path_or_id_str.startswith("MTP_DEVICEID:"):
-                if not COM_AVAILABLE:
-                    print("Cannot hash MTP file: win32com not available.")
-                    return None
-                
-                parts = path_or_id_str.split(':')
-                # Expected format: MTP_DEVICEID:<dev_id>:MTP_OBJECTID:<obj_id>
-                if len(parts) == 4 and parts[0] == "MTP_DEVICEID" and parts[2] == "MTP_OBJECTID":
-                    device_id_str = parts[1]
-                    object_id_str = parts[3]
-                else: # Fallback for older MTP_ID format, assuming device_id is in source_device_id
-                    if not mtp_device_id_for_source or not path_or_id_str.startswith("MTP_ID:"):
-                         print(f"Invalid MTP path format for hashing: {path_or_id_str}")
-                         return None
-                    device_id_str = mtp_device_id_for_source
-                    object_id_str = path_or_id_str.split(":",1)[1]
-
-                wpd_file_obj = get_wpd_object_by_id(device_id_str, object_id_str)
-                if not wpd_file_obj:
-                    print(f"Could not find WPDObject for hashing: DevID {device_id_str}, ObjID {object_id_str}")
-                    return None
-                
-                with wpd_file_obj.open('rb') as f:
-                    while chunk := f.read(chunk_size):
-                        hash_md5.update(chunk)
-                print(f"Hashed MTP file: {wpd_file_obj.name}")
-            
-            elif os.path.exists(path_or_id_str): # Filesystem path
-                with open(path_or_id_str, "rb") as f:
-                    while chunk := f.read(chunk_size):
-                        hash_md5.update(chunk)
-            else:
-                print(f"Hash calculation: File not found at path/ID {path_or_id_str}")
-                return None
+            with open(path, "rb") as f:
+                while chunk := f.read(chunk_size):
+                    hash_md5.update(chunk)
             return hash_md5.hexdigest()
         except Exception as e:
-            print(f"Error calculating hash for {path_or_id_str}: {e}")
+            print(f"Error calculating hash for {path}: {e}")
             return None
     
     @staticmethod
@@ -645,12 +617,21 @@ class FileDeduplicator:
             if source_size != dest_size:
                 return False
             
-            # If sizes are the same, compare file hashes
-            # Pass the whole source_file_info to get_file_hash as it now needs more context for MTP
+            # For MTP files, size match + date match is sufficient deduplication
+            # to avoid the massive performance hit of downloading for MD5.
+            if source_file_info.get('is_mtp', False):
+                try:
+                    dest_mtime = datetime.fromtimestamp(os.path.getmtime(destination_file))
+                    # Allow 2 second difference for filesystem precision issues
+                    if abs((creation_date - dest_mtime).total_seconds()) < 2:
+                        return True
+                except:
+                    pass
+                return False # If we can't verify date, assume not duplicate to be safe
+                
+            # For regular files, we use hashes for 100% certainty
             source_hash = FileDeduplicator.get_file_hash(source_file_info) 
-            
-            # Destination is always a filesystem path
-            dest_hash_info = {'path': destination_file, 'source_device_id': None}
+            dest_hash_info = {'path': destination_file, 'is_mtp': False}
             dest_hash = FileDeduplicator.get_file_hash(dest_hash_info)
             
             return source_hash == dest_hash and source_hash is not None

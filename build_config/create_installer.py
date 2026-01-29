@@ -28,10 +28,10 @@ def create_installer():
     """Create installer"""
     print("=== Creating SD Card Backup Tool Installer ===")
     
-    # Get project root directory
-    project_root = Path(__file__).parent.parent
-    script_path = Path(__file__).parent / "installer.iss"
-    exe_path = project_root / "dist" / "Photo Video Backup Tool.exe" # Photo Video Backup Tool.exe
+    # Get project root directory (one level up from build_config)
+    project_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    script_path = Path(os.path.dirname(os.path.abspath(__file__))) / "installer.iss"
+    exe_path = project_root / "dist" / "SD_Backup_Tool.exe"
     
     # Check if executable exists
     if not exe_path.exists():
@@ -127,8 +127,8 @@ def main():
     if success:
         print("\n🎉 Installer created successfully!")
         print("📋 Release checklist:")
-        print("✅ Executable: dist/Photo Video Backup Tool.exe") # Executable: dist/Photo Video Backup Tool.exe
-        print("✅ Installer: installer_output/Photo Video Backup Tool_Installer_v1.0.0.exe") # Installer: installer_output/Photo Video Backup Tool_Installer_v1.0.0.exe
+        print("✅ Executable: dist/SD_Backup_Tool.exe")
+        print("✅ Installer: installer_output/SD_Backup_Tool_Installer_v1.3.0.exe")
     else:
         print("\n❌ Installer creation failed.")
 

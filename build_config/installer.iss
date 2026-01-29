@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=Photo Video Backup Tool
-AppVersion=1.0.0
+AppVersion=1.3.0
 AppPublisher=SD Backup Tool Development Team
 AppPublisherURL=
 AppSupportURL=
@@ -13,7 +13,7 @@ DefaultGroupName=Photo Video Backup Tool
 AllowNoIcons=yes
 LicenseFile=
 OutputDir=installer_output
-OutputBaseFilename=Photo_Video_Backup_Tool_Installer_v1.0.0
+OutputBaseFilename=SD_Backup_Tool_Installer_v1.3.0
 SetupIconFile=..\assets\icon.ico
 Compression=lzma
 SolidCompression=yes
@@ -31,18 +31,18 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1
 
 [Files]
-Source: "..\dist\Photo Video Backup Tool.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\SD_Backup_Tool.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion; DestName: "Instructions.txt"
 
 [Icons]
-Name: "{group}\Photo Video Backup Tool"; Filename: "{app}\Photo Video Backup Tool.exe"
+Name: "{group}\Photo Video Backup Tool"; Filename: "{app}\SD_Backup_Tool.exe"
 Name: "{group}\{cm:UninstallProgram,Photo Video Backup Tool}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Photo Video Backup Tool"; Filename: "{app}\Photo Video Backup Tool.exe"; Tasks: desktopicon
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\Photo Video Backup Tool"; Filename: "{app}\Photo Video Backup Tool.exe"; Tasks: quicklaunchicon
+Name: "{autodesktop}\Photo Video Backup Tool"; Filename: "{app}\SD_Backup_Tool.exe"; Tasks: desktopicon
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\Photo Video Backup Tool"; Filename: "{app}\SD_Backup_Tool.exe"; Tasks: quicklaunchicon
 
 [Run]
-Filename: "{app}\Photo Video Backup Tool.exe"; Description: "{cm:LaunchProgram,Photo Video Backup Tool}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\SD_Backup_Tool.exe"; Description: "{cm:LaunchProgram,Photo Video Backup Tool}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{userappdata}\SDBackupTool"
